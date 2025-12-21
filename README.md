@@ -19,7 +19,7 @@
 Add `z3` to your `build.zig.zon`:
 
 ```bash
-zig fetch --save https://github.com/alex/z3/archive/main.tar.gz
+zig fetch --save https://codeberg.org/fellowtraveler/z3.git#HEAD
 ```
 
 Then in your `build.zig`:

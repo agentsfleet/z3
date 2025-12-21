@@ -1,0 +1,12 @@
+.{
+    .name = .z3,
+    .version = "0.1.0",
+    .fingerprint = 0x2bd9e295707e6e37,
+    .minimum_zig_version = "0.16.0-dev.1484+d0ba6642b",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

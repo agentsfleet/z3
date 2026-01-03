@@ -2,6 +2,8 @@
 
 `z3` is a lightweight, high-performance, and asynchronous S3 client for Zig. It is built directly on `std.http.Client` and utilizes the `std.Io` interface for efficient parallel operations. It has been primarily tested with Cloudflare R2 but is designed to work with any S3-compatible service.
 
+## Expect breaking changes until zig 0.16 is released
+
 ## Features
 
 - **Async & Parallel**: Leverages Zig's `std.Io` for non-blocking, parallel S3 operations.

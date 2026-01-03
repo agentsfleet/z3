@@ -7,7 +7,8 @@
 - **Async & Parallel**: Leverages Zig's `std.Io` for non-blocking, parallel S3 operations.
 - **Pure Zig**: Zero external dependencies beyond the Zig standard library.
 - **S3 Compatible**: Works with AWS S3, Cloudflare R2, MinIO, and other S3-compatible storage services.
-- **Comprehensive API**: Supports common operations like GET, PUT, DELETE, HEAD, Copy, and Bucket management.
+- **Comprehensive API**: Supports GET, PUT, DELETE, HEAD, Copy, Bucket management, and file-based uploads/downloads.
+- **Streaming**: Includes streaming APIs for object downloads and direct-to-file transfers.
 - **XML Parsing**: Built-in support for parsing S3 XML responses for object listings and error handling.
 
 ## Prerequisites
@@ -84,7 +85,10 @@ pub fn main() !void {
 
 ### Object Operations
 - `getObject(bucket, key)`
+- `getObjectStream(bucket, key)`
+- `getFile(bucket, key, dest_path, options)`
 - `putObject(bucket, key, body)`
+- `putFile(bucket, key, src_path, options)`
 - `deleteObject(bucket, key)`
 - `headObject(bucket, key)`
 - `copyObject(src_bucket, src_key, dst_bucket, dst_key)`
@@ -100,7 +104,7 @@ pub fn main() !void {
 `z3` is currently a work-in-progress. The following features are not yet implemented:
 
 - **Multipart Upload**: Essential for uploading files larger than 5GB or for better reliability with large files.
-- **Streaming**: Currently, `getObject` buffers the entire response in memory. A streaming API is planned.
+- **Streaming Upload Signatures**: `putFile` requires a seekable file to compute content length and SHA-256; chunked signing is not yet implemented.
 - **Pagination**: `listObjects` does not yet support continuation tokens for paginating through large buckets.
 - **Presigned URLs**: Support for generating temporary GET/PUT URLs.
 - **Advanced Authentication**: Support for IAM roles, environment variables, and AWS profile-based credential discovery.

@@ -10,7 +10,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var threaded: Io.Threaded = .init(allocator);
+    var threaded: Io.Threaded = .init(allocator, .{});
     defer threaded.deinit();
     const io = threaded.io();
 
@@ -43,11 +43,10 @@ fn runMain(allocator: Allocator, io: Io) !void {
     const test_keys = [_][]const u8{ "afile-0.txt", "afile-1.txt", "afile-2.txt", "afile-3.txt", "afile-4.txt" };
 
     std.debug.print("Creating {d} test objects...\n", .{test_keys.len});
-    var futures_a: [test_keys.len]@TypeOf(io.async(S3Client.putObject, .{ &client, bucket, test_keys[0], "THIS IS A TEST FILE" })) = undefined;
+    const PutFuture = Io.Future(S3Client.RequestError!S3Client.Response);
+    var futures_a: [test_keys.len]PutFuture = undefined;
     for (test_keys, 0..) |key, i| {
-        // const content = std.fmt.bufPrint(&buf, "Content of file {d} - async test!", .{i}) catch continue;
-
-        futures_a[i]= io.async(S3Client.putObject, .{ &client, bucket, key, "THIS IS A TEST FILE"});
+        futures_a[i] = io.async(S3Client.putObject, .{ &client, bucket, key, "THIS IS A TEST FILE" });
     }
 
     // Await results
@@ -64,7 +63,7 @@ fn runMain(allocator: Allocator, io: Io) !void {
 
     var list_res = try client.listObjects("code", "");
     defer list_res.deinit();
-    std.debug.print("Listing all the darn files!!\n", .{});
+    std.debug.print("Listing all the files!!\n", .{});
     for (list_res.objects) |obj| {
         std.debug.print("{s}\n", .{obj.key});
     }
@@ -72,7 +71,8 @@ fn runMain(allocator: Allocator, io: Io) !void {
     // Fetch all objects in parallel using io.async
     std.debug.print("\nFetching {d} objects in parallel...\n", .{test_keys.len});
 
-    var futures: [test_keys.len]@TypeOf(io.async(S3Client.getObject, .{ &client, bucket, test_keys[0] })) = undefined;
+    const GetFuture = Io.Future(S3Client.RequestError!S3Client.Response);
+    var futures: [test_keys.len]GetFuture = undefined;
     for (test_keys, 0..) |key, i| {
         futures[i] = io.async(S3Client.getObject, .{ &client, bucket, key });
     }

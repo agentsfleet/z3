@@ -64,8 +64,9 @@ pub fn main() !void {
 
     // Fetch objects in parallel
     const keys = [_][]const u8{ "file1.txt", "file2.txt" };
-    var futures: [keys.len]@TypeOf(io.async(S3Client.getObject, .{ &client, "my-bucket", keys[0] })) = undefined;
-    
+    const Future = std.Io.Future(S3Client.RequestError!S3Client.Response);
+    var futures: [keys.len]Future = undefined;
+
     for (keys, 0..) |key, i| {
         futures[i] = io.async(S3Client.getObject, .{ &client, "my-bucket", key });
     }

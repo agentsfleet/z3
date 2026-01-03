@@ -80,6 +80,18 @@ pub const S3Client = struct {
         BodyLengthMismatch,
     };
 
+    pub const RequestError = Error || Allocator.Error || error{
+        InvalidUri,
+        ConnectionFailed,
+        SendFailed,
+        FlushFailed,
+        ReceiveFailed,
+        ReadFailed,
+        WriteFailed,
+        RequestTooLong,
+        StringToSignTooLong,
+    };
+
     pub const ObjectStream = struct {
         allocator: Allocator,
         request: *http.Client.Request,
@@ -145,12 +157,12 @@ pub const S3Client = struct {
     }
 
     /// GET object from S3
-    pub fn getObject(self: *S3Client, bucket: []const u8, key: []const u8) !Response {
+    pub fn getObject(self: *S3Client, bucket: []const u8, key: []const u8) RequestError!Response {
         return self.getObjectWithOptions(bucket, key, .{});
     }
 
     /// GET object from S3 as a streaming response.
-    pub fn getObjectStream(self: *S3Client, bucket: []const u8, key: []const u8) !ObjectStream {
+    pub fn getObjectStream(self: *S3Client, bucket: []const u8, key: []const u8) RequestError!ObjectStream {
         const req = try self.prepareRequest(.GET, bucket, key, .{});
         return self.executeRequestStream(req);
     }
@@ -214,7 +226,7 @@ pub const S3Client = struct {
         };
     }
 
-    pub fn getObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: RequestOptions) !Response {
+    pub fn getObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: RequestOptions) RequestError!Response {
         var req = try self.prepareRequest(.GET, bucket, key, .{ .options = options });
         defer req.deinit();
 
@@ -222,7 +234,7 @@ pub const S3Client = struct {
     }
 
     /// PUT object to S3
-    pub fn putObject(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8) !Response {
+    pub fn putObject(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8) RequestError!Response {
         return self.putObjectWithOptions(bucket, key, body, .{});
     }
 
@@ -278,7 +290,7 @@ pub const S3Client = struct {
         return self.executeRequestWithReader(&req, &file_reader.interface);
     }
 
-    pub fn putObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8, options: RequestOptions) !Response {
+    pub fn putObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8, options: RequestOptions) RequestError!Response {
         var req = try self.prepareRequest(.PUT, bucket, key, .{ .body = body, .options = options });
         defer req.deinit();
 
@@ -286,18 +298,18 @@ pub const S3Client = struct {
     }
 
     /// DELETE object from S3
-    pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8) !Response {
+    pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8) RequestError!Response {
         return self.deleteObjectWithOptions(bucket, key, .{});
     }
 
-    pub fn deleteObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: RequestOptions) !Response {
+    pub fn deleteObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: RequestOptions) RequestError!Response {
         var req = try self.prepareRequest(.DELETE, bucket, key, .{ .options = options });
         defer req.deinit();
 
         return self.executeRequest(&req);
     }
     /// HEAD object (get metadata)
-    pub fn headObject(self: *S3Client, bucket: []const u8, key: []const u8) !Response {
+    pub fn headObject(self: *S3Client, bucket: []const u8, key: []const u8) RequestError!Response {
         var req = try self.prepareRequest(.HEAD, bucket, key, .{});
         defer req.deinit();
 
@@ -305,7 +317,7 @@ pub const S3Client = struct {
     }
 
     /// List objects in bucket
-    pub fn listObjects(self: *S3Client, bucket: []const u8, prefix: ?[]const u8) !types.ListObjectsResult {
+    pub fn listObjects(self: *S3Client, bucket: []const u8, prefix: ?[]const u8) RequestError!types.ListObjectsResult {
         // Build query string with RFC3986 encoding for the prefix value.
         const query = try self.buildListObjectsQuery(prefix);
         defer self.allocator.free(query);
@@ -330,7 +342,7 @@ pub const S3Client = struct {
     }
 
     /// Create a new bucket
-    pub fn createBucket(self: *S3Client, bucket: []const u8) !Response {
+    pub fn createBucket(self: *S3Client, bucket: []const u8) RequestError!Response {
         var req = try self.prepareRequest(.PUT, bucket, null, .{ .options = .{ .max_body_size = 64 * 1024 } });
         defer req.deinit();
 
@@ -338,13 +350,13 @@ pub const S3Client = struct {
     }
 
     /// Delete a bucket (must be empty)
-    pub fn deleteBucket(self: *S3Client, bucket: []const u8) !Response {
+    pub fn deleteBucket(self: *S3Client, bucket: []const u8) RequestError!Response {
         var req = try self.prepareRequest(.DELETE, bucket, null, .{ .options = .{ .max_body_size = 64 * 1024 } });
         defer req.deinit();
 
         return self.executeRequest(&req);
     }
-    pub fn copyObject(self: *S3Client, src_bucket: []const u8, src_key: []const u8, dst_bucket: []const u8, dst_key: []const u8) !Response {
+    pub fn copyObject(self: *S3Client, src_bucket: []const u8, src_key: []const u8, dst_bucket: []const u8, dst_key: []const u8) RequestError!Response {
         const copy_source = try self.buildCopySource(src_bucket, src_key);
         defer self.allocator.free(copy_source);
 
@@ -355,7 +367,7 @@ pub const S3Client = struct {
     }
 
     /// List all buckets
-    pub fn listBuckets(self: *S3Client) !types.ListBucketsResult {
+    pub fn listBuckets(self: *S3Client) RequestError!types.ListBucketsResult {
         var req = try self.prepareRequest(.GET, null, null, .{ .options = .{ .max_body_size = 1024 * 1024 } });
         defer req.deinit();
 

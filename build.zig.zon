@@ -1,8 +1,8 @@
 .{
     .name = .z3,
-    .version = "0.1.0",
+    .version = "0.1.1",
     .fingerprint = 0x2bd9e295707e6e37,
-    .minimum_zig_version = "0.16.0-dev.1484+d0ba6642b",
+    .minimum_zig_version = "0.16.0-dev.1859+212968c57",
     .dependencies = .{},
     .paths = .{
         "build.zig",

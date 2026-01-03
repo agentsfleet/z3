@@ -30,7 +30,7 @@ const TestContext = struct {
         ctx.gpa = .{};
         const allocator = ctx.gpa.allocator();
 
-        ctx.threaded = Io.Threaded.init(allocator);
+        ctx.threaded = Io.Threaded.init(allocator, .{});
         const io = ctx.threaded.io();
         std.debug.print("  IO initialized\n", .{});
 
@@ -82,6 +82,71 @@ test "02_putObject" {
 
     try std.testing.expect(response.status == .ok or response.status == .created);
     std.debug.print("=== DONE 02_putObject: {} ===\n", .{response.status});
+}
+
+// 2b. Put object (file)
+test "02b_putFile" {
+    std.debug.print("\n=== START 02b_putFile ===\n", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const rel_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/putfile.txt", .{tmp.sub_path});
+    defer std.testing.allocator.free(rel_path);
+
+    const io = ctx.threaded.io();
+    const file = try std.Io.Dir.createFile(.cwd(), io, rel_path, .{ .truncate = true });
+    defer file.close(io);
+    var file_buffer: [4096]u8 = undefined;
+    var file_writer = std.Io.File.Writer.init(file, io, &file_buffer);
+    try file_writer.interface.writeAll(test_content);
+    try file_writer.interface.flush();
+
+    std.debug.print("  calling putFile...\n", .{});
+    var response = try ctx.client.putFile(test_bucket, test_key, rel_path, .{});
+    defer response.deinit();
+    std.debug.print("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+
+    try std.testing.expect(response.status == .ok or response.status == .created);
+    std.debug.print("=== DONE 02b_putFile: {} ===\n", .{response.status});
+}
+
+// 2c. Get object (file)
+test "02c_getFile" {
+    std.debug.print("\n=== START 02c_getFile ===\n", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const rel_path = try std.fmt.allocPrint(std.testing.allocator, ".zig-cache/tmp/{s}/getfile.txt", .{tmp.sub_path});
+    defer std.testing.allocator.free(rel_path);
+
+    std.debug.print("  calling getFile...\n", .{});
+    const result = try ctx.client.getFile(test_bucket, test_key, rel_path, .{});
+    std.debug.print("  Got response: {} bytes_written={d}\n", .{ result.status, result.bytes_written });
+    try std.testing.expect(result.status == .ok);
+    try std.testing.expectEqual(@as(u64, test_content.len), result.bytes_written);
+
+    const io = ctx.threaded.io();
+    const file = try std.Io.Dir.openFile(.cwd(), io, rel_path, .{ .mode = .read_only });
+    defer file.close(io);
+    var reader_buffer: [4096]u8 = undefined;
+    var file_reader = std.Io.File.Reader.init(file, io, &reader_buffer);
+    const data = try file_reader.interface.allocRemaining(
+        std.testing.allocator,
+        std.Io.Limit.unlimited,
+    );
+    defer std.testing.allocator.free(data);
+
+    try std.testing.expectEqualStrings(test_content, data);
+    try std.testing.expectEqual(@as(u64, test_content.len), @as(u64, data.len));
+    std.debug.print("=== DONE 02c_getFile: {d} bytes ===\n", .{data.len});
 }
 
 // 3. List buckets
@@ -149,9 +214,36 @@ test "05_getObject" {
     std.debug.print("=== DONE 05_getObject: {} - \"{s}\" ===\n", .{ response.status, response.body });
 }
 
-// 6. Delete object
-test "06_deleteObject" {
-    std.debug.print("\n=== START 06_deleteObject ===\n", .{});
+// 6. Get object (streaming)
+test "06_getObjectStream" {
+    std.debug.print("\n=== START 06_getObjectStream ===\n", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+    std.debug.print("  calling getObjectStream...\n", .{});
+
+    var stream = try ctx.client.getObjectStream(test_bucket, test_key);
+    defer stream.deinit();
+
+    const reader = try stream.reader();
+    var buf = try std.ArrayList(u8).initCapacity(ctx.gpa.allocator(), 0);
+    defer buf.deinit(ctx.gpa.allocator());
+
+    var chunk: [1024]u8 = undefined;
+    while (true) {
+        const n = try reader.readSliceShort(&chunk);
+        if (n == 0) break;
+        try buf.appendSlice(ctx.gpa.allocator(), chunk[0..n]);
+        if (n < chunk.len) break;
+    }
+
+    try std.testing.expectEqualStrings(test_content, buf.items);
+    std.debug.print("=== DONE 06_getObjectStream: {} - {d} bytes ===\n", .{ stream.status(), buf.items.len });
+}
+
+// 7. Delete object
+test "07_deleteObject" {
+    std.debug.print("\n=== START 07_deleteObject ===\n", .{});
 
     var ctx = try TestContext.init();
     defer ctx.deinit();
@@ -162,12 +254,12 @@ test "06_deleteObject" {
     std.debug.print("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
     // 204 No Content is expected for successful delete
     try std.testing.expect(response.status == .no_content or response.status == .ok);
-    std.debug.print("=== DONE 06_deleteObject: {} ===\n", .{response.status});
+    std.debug.print("=== DONE 07_deleteObject: {} ===\n", .{response.status});
 }
 
-// 7. Delete bucket
-test "07_deleteBucket" {
-    std.debug.print("\n=== START 07_deleteBucket ===\n", .{});
+// 8. Delete bucket
+test "08_deleteBucket" {
+    std.debug.print("\n=== START 08_deleteBucket ===\n", .{});
 
     var ctx = try TestContext.init();
     defer ctx.deinit();
@@ -179,5 +271,5 @@ test "07_deleteBucket" {
 
     // 204 No Content is expected for successful delete
     try std.testing.expect(response.status == .no_content or response.status == .ok);
-    std.debug.print("=== DONE 07_deleteBucket: {} ===\n", .{response.status});
+    std.debug.print("=== DONE 08_deleteBucket: {} ===\n", .{response.status});
 }

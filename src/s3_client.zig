@@ -31,6 +31,34 @@ pub const S3Client = struct {
         max_body_size: usize = 100 * 1024 * 1024,
     };
 
+    pub const GetFileOptions = struct {
+        max_body_size: usize = 100 * 1024 * 1024,
+        overwrite: bool = true,
+        create_dirs: bool = false,
+        file_permissions: std.Io.File.Permissions = .default_file,
+    };
+
+    pub const GetFileResult = struct {
+        status: http.Status,
+        bytes_written: u64,
+    };
+
+    pub const GetFileError =
+        @typeInfo(@typeInfo(@TypeOf(getObjectStream)).@"fn".return_type.?).error_union.error_set ||
+        Error ||
+        ObjectStream.Error ||
+        std.Io.File.OpenError ||
+        std.Io.File.Writer.Error ||
+        std.Io.Dir.CreateDirPathError ||
+        Io.Reader.StreamError ||
+        Io.Reader.LimitedAllocError ||
+        Allocator.Error;
+
+    pub const PutFileOptions = struct {
+        content_type: ?[]const u8 = "application/octet-stream",
+        max_response_body_size: usize = 64 * 1024,
+    };
+
     pub const Response = struct {
         status: http.Status,
         body: []u8,
@@ -48,6 +76,44 @@ pub const S3Client = struct {
         S3Error,
         IoRequired,
         KeyTooLong,
+        ContentLengthRequired,
+        BodyLengthMismatch,
+    };
+
+    pub const ObjectStream = struct {
+        allocator: Allocator,
+        request: *http.Client.Request,
+        response: http.Client.Response,
+        request_data: UnifiedRequest,
+        redirect_buffer: [8 * 1024]u8 = undefined,
+        transfer_buffer: [64]u8 = undefined,
+        decompress: http.Decompress = undefined,
+        decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined,
+        reader_started: bool = false,
+
+        pub const Error = error{
+            ReaderAlreadyRequested,
+        };
+
+        pub fn status(self: *const ObjectStream) http.Status {
+            return self.response.head.status;
+        }
+
+        pub fn reader(self: *ObjectStream) ObjectStream.Error!*Io.Reader {
+            if (self.reader_started) return error.ReaderAlreadyRequested;
+            self.reader_started = true;
+            return self.response.readerDecompressing(
+                &self.transfer_buffer,
+                &self.decompress,
+                &self.decompress_buffer,
+            );
+        }
+
+        pub fn deinit(self: *ObjectStream) void {
+            self.request.deinit();
+            self.allocator.destroy(self.request);
+            self.request_data.deinit();
+        }
     };
 
 
@@ -83,6 +149,71 @@ pub const S3Client = struct {
         return self.getObjectWithOptions(bucket, key, .{});
     }
 
+    /// GET object from S3 as a streaming response.
+    pub fn getObjectStream(self: *S3Client, bucket: []const u8, key: []const u8) !ObjectStream {
+        const req = try self.prepareRequest(.GET, bucket, key, .{});
+        return self.executeRequestStream(req);
+    }
+
+    /// GET object from S3 and stream it directly into a file.
+    pub fn getFile(
+        self: *S3Client,
+        bucket: []const u8,
+        key: []const u8,
+        dest_path: []const u8,
+        options: GetFileOptions,
+    ) GetFileError!GetFileResult {
+        var stream = try self.getObjectStream(bucket, key);
+        defer stream.deinit();
+
+        if (stream.status() != .ok) {
+            const reader = try stream.reader();
+            const body = try reader.allocRemaining(self.allocator, Io.Limit.limited(options.max_body_size));
+            defer self.allocator.free(body);
+            var s3_err = xml.parseS3Error(self.allocator, body) catch return error.RequestFailed;
+            defer s3_err.deinit();
+            std.log.err("S3 error: {s} - {s}", .{ s3_err.code, s3_err.message });
+            return error.S3Error;
+        }
+
+        const io = self.http_client.io;
+        if (options.create_dirs) {
+            if (std.fs.path.dirname(dest_path)) |dir_name| {
+                try std.Io.Dir.createDirPath(.cwd(), io, dir_name);
+            }
+        }
+
+        const file_flags: std.Io.File.CreateFlags = .{
+            .truncate = true,
+            .exclusive = !options.overwrite,
+            .permissions = options.file_permissions,
+        };
+
+        const file = if (std.Io.Dir.path.isAbsolute(dest_path))
+            try std.Io.Dir.createFileAbsolute(io, dest_path, file_flags)
+        else
+            try std.Io.Dir.createFile(.cwd(), io, dest_path, file_flags);
+        defer file.close(io);
+
+        var file_buffer: [16 * 1024]u8 = undefined;
+        var file_writer = std.Io.File.Writer.init(file, io, &file_buffer);
+
+        const reader = try stream.reader();
+        while (true) {
+            const n = reader.stream(&file_writer.interface, .unlimited) catch |err| switch (err) {
+                error.EndOfStream => break,
+                else => return err,
+            };
+            if (n == 0) continue;
+        }
+        try file_writer.interface.flush();
+
+        return .{
+            .status = stream.status(),
+            .bytes_written = file_writer.logicalPos(),
+        };
+    }
+
     pub fn getObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: RequestOptions) !Response {
         var req = try self.prepareRequest(.GET, bucket, key, .{ .options = options });
         defer req.deinit();
@@ -93,6 +224,58 @@ pub const S3Client = struct {
     /// PUT object to S3
     pub fn putObject(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8) !Response {
         return self.putObjectWithOptions(bucket, key, body, .{});
+    }
+
+    /// PUT object from a file path to S3.
+    pub fn putFile(
+        self: *S3Client,
+        bucket: []const u8,
+        key: []const u8,
+        src_path: []const u8,
+        options: PutFileOptions,
+    ) !Response {
+        const io = self.http_client.io;
+        const file = if (std.Io.Dir.path.isAbsolute(src_path))
+            try std.Io.Dir.openFileAbsolute(io, src_path, .{ .mode = .read_only })
+        else
+            try std.Io.Dir.openFile(.cwd(), io, src_path, .{ .mode = .read_only });
+        defer file.close(io);
+
+        var reader_buffer: [16 * 1024]u8 = undefined;
+        var file_reader = std.Io.File.Reader.init(file, io, &reader_buffer);
+
+        const size = file_reader.getSize() catch |err| switch (err) {
+            error.Streaming => return error.ContentLengthRequired,
+            else => return err,
+        };
+
+        var discard_buffer: [1024]u8 = undefined;
+        var hash_buffer: [1024]u8 = undefined;
+        var discarding = std.Io.Writer.Discarding.init(&discard_buffer);
+        var hashed = std.Io.Writer.hashed(
+            &discarding.writer,
+            std.crypto.hash.sha2.Sha256.init(.{}),
+            &hash_buffer,
+        );
+        _ = try file_reader.interface.streamRemaining(&hashed.writer);
+        try hashed.writer.flush();
+
+        var digest: [32]u8 = undefined;
+        hashed.hasher.final(&digest);
+        var content_hash_buf: [64]u8 = undefined;
+        bytesToHex(&digest, &content_hash_buf);
+
+        try file_reader.seekTo(0);
+
+        var req = try self.prepareRequest(.PUT, bucket, key, .{
+            .content_hash = &content_hash_buf,
+            .body_len = @intCast(size),
+            .content_type = options.content_type,
+            .options = .{ .max_body_size = options.max_response_body_size },
+        });
+        defer req.deinit();
+
+        return self.executeRequestWithReader(&req, &file_reader.interface);
     }
 
     pub fn putObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8, options: RequestOptions) !Response {
@@ -123,11 +306,8 @@ pub const S3Client = struct {
 
     /// List objects in bucket
     pub fn listObjects(self: *S3Client, bucket: []const u8, prefix: ?[]const u8) !types.ListObjectsResult {
-        // Build query string
-        const query = if (prefix) |p|
-            try std.fmt.allocPrint(self.allocator, "list-type=2&prefix={s}", .{p})
-        else
-            try self.allocator.dupe(u8, "list-type=2");
+        // Build query string with RFC3986 encoding for the prefix value.
+        const query = try self.buildListObjectsQuery(prefix);
         defer self.allocator.free(query);
 
         var req = try self.prepareRequest(.GET, bucket, null, .{ .query = query, .options = .{ .max_body_size = 10 * 1024 * 1024 } });
@@ -165,7 +345,7 @@ pub const S3Client = struct {
         return self.executeRequest(&req);
     }
     pub fn copyObject(self: *S3Client, src_bucket: []const u8, src_key: []const u8, dst_bucket: []const u8, dst_key: []const u8) !Response {
-        const copy_source = try std.fmt.allocPrint(self.allocator, "/{s}/{s}", .{ src_bucket, src_key });
+        const copy_source = try self.buildCopySource(src_bucket, src_key);
         defer self.allocator.free(copy_source);
 
         var req = try self.prepareRequest(.PUT, dst_bucket, dst_key, .{ .copy_source = copy_source, .options = .{ .max_body_size = 64 * 1024 } });
@@ -203,6 +383,7 @@ pub const S3Client = struct {
         url: []u8,
         headers: []http.Header,
         body: []const u8,
+        content_length: usize,
         max_body_size: usize,
         is_bodiless: bool,
 
@@ -220,10 +401,28 @@ pub const S3Client = struct {
         query: ?[]const u8 = null,
         body: []const u8 = "",
         copy_source: ?[]const u8 = null,
+        content_hash: ?[]const u8 = null,
+        body_len: ?usize = null,
+        content_type: ?[]const u8 = null,
         options: RequestOptions = .{
 
         },
     };
+
+    fn buildListObjectsQuery(self: *S3Client, prefix: ?[]const u8) ![]u8 {
+        if (prefix) |p| {
+            const encoded = try encodeQueryValue(self.allocator, p);
+            defer self.allocator.free(encoded);
+            return std.fmt.allocPrint(self.allocator, "list-type=2&prefix={s}", .{encoded});
+        }
+        return self.allocator.dupe(u8, "list-type=2");
+    }
+
+    fn buildCopySource(self: *S3Client, src_bucket: []const u8, src_key: []const u8) ![]u8 {
+        const encoded_key = try encodePath(self.allocator, src_key);
+        defer self.allocator.free(encoded_key);
+        return std.fmt.allocPrint(self.allocator, "/{s}/{s}", .{ src_bucket, encoded_key });
+    }
 
     fn prepareRequest(
         self: *S3Client,
@@ -249,9 +448,14 @@ pub const S3Client = struct {
         formatAmzDate(timestamp, &date_header_buf);
         const date_header = &date_header_buf;
 
-        var content_hash_buf: [64]u8 = undefined;
-        sha256Hex(params.body, &content_hash_buf);
-        const content_hash = &content_hash_buf;
+        const body_len = params.body_len orelse params.body.len;
+        const content_hash = if (params.content_hash) |hash|
+            hash
+        else blk: {
+            var content_hash_buf: [64]u8 = undefined;
+            sha256Hex(params.body, &content_hash_buf);
+            break :blk &content_hash_buf;
+        };
 
         const auth_header = try self.signRequest(
             @tagName(method),
@@ -277,7 +481,9 @@ pub const S3Client = struct {
             try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "X-Amz-Copy-Source"), .value = try self.allocator.dupe(u8, src) });
         }
 
-        if (method == .PUT and params.body.len > 0) {
+        if (params.content_type) |content_type| {
+            try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Content-Type"), .value = try self.allocator.dupe(u8, content_type) });
+        } else if (method == .PUT and body_len > 0) {
             try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Content-Type"), .value = try self.allocator.dupe(u8, "application/octet-stream") });
         }
 
@@ -295,8 +501,9 @@ pub const S3Client = struct {
             .url = url,
             .headers = owned_headers,
             .body = params.body,
+            .content_length = body_len,
             .max_body_size = params.options.max_body_size,
-            .is_bodiless = params.body.len == 0 and method != .PUT and params.copy_source == null,
+            .is_bodiless = body_len == 0 and method != .PUT and params.copy_source == null,
         };
     }
 
@@ -314,7 +521,8 @@ pub const S3Client = struct {
             // (workaround for TLS+async Io buffering issue with bodiless requests)
             http_req.connection.?.flush() catch return error.FlushFailed;
         } else {
-            http_req.transfer_encoding = .{ .content_length = req.body.len };
+            std.debug.assert(req.body.len == req.content_length);
+            http_req.transfer_encoding = .{ .content_length = req.content_length };
             var body_writer = http_req.sendBody(&.{}) catch return error.SendFailed;
             body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
             body_writer.end() catch return error.WriteFailed;
@@ -341,6 +549,81 @@ pub const S3Client = struct {
         };
     }
 
+    fn executeRequestWithReader(self: *S3Client, req: *UnifiedRequest, reader: *Io.Reader) !Response {
+        const uri = std.Uri.parse(req.url) catch return error.InvalidUri;
+
+        var http_req = self.http_client.request(req.http_method, uri, .{
+            .extra_headers = req.headers,
+        }) catch return error.ConnectionFailed;
+        defer http_req.deinit();
+
+        std.debug.assert(!req.is_bodiless);
+        http_req.transfer_encoding = .{ .content_length = req.content_length };
+        var body_buffer: [16 * 1024]u8 = undefined;
+        var body_writer = http_req.sendBody(&body_buffer) catch return error.SendFailed;
+        const written = reader.streamRemaining(&body_writer.writer) catch |err| switch (err) {
+            error.ReadFailed => return error.ReadFailed,
+            error.WriteFailed => return error.WriteFailed,
+        };
+        if (written != req.content_length) return error.BodyLengthMismatch;
+        body_writer.end() catch return error.WriteFailed;
+        http_req.connection.?.flush() catch return error.FlushFailed;
+
+        var redirect_buffer: [8 * 1024]u8 = undefined;
+        var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
+
+        const response_body: []u8 = if (response.head.status == .no_content or req.http_method == .HEAD or req.http_method == .DELETE)
+            ""
+        else blk: {
+            var transfer_buffer: [64]u8 = undefined;
+            var decompress: http.Decompress = undefined;
+            var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+            const response_reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
+            break :blk response_reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
+        };
+
+        return Response{
+            .status = response.head.status,
+            .body = response_body,
+            .allocator = self.allocator,
+        };
+    }
+
+    fn executeRequestStream(self: *S3Client, req_in: UnifiedRequest) !ObjectStream {
+        var req = req_in;
+        errdefer req.deinit();
+        const uri = std.Uri.parse(req.url) catch return error.InvalidUri;
+
+        const request_ptr = try self.allocator.create(http.Client.Request);
+        errdefer self.allocator.destroy(request_ptr);
+
+        request_ptr.* = self.http_client.request(req.http_method, uri, .{
+            .extra_headers = req.headers,
+        }) catch return error.ConnectionFailed;
+        errdefer request_ptr.deinit();
+
+        if (req.is_bodiless) {
+            request_ptr.sendBodiless() catch return error.SendFailed;
+            request_ptr.connection.?.flush() catch return error.FlushFailed;
+        } else {
+            request_ptr.transfer_encoding = .{ .content_length = req.body.len };
+            var body_writer = request_ptr.sendBody(&.{}) catch return error.SendFailed;
+            body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
+            body_writer.end() catch return error.WriteFailed;
+            request_ptr.connection.?.flush() catch return error.FlushFailed;
+        }
+
+        var stream = ObjectStream{
+            .allocator = self.allocator,
+            .request = request_ptr,
+            .response = undefined,
+            .request_data = req,
+        };
+
+        stream.response = request_ptr.receiveHead(&stream.redirect_buffer) catch return error.ReceiveFailed;
+        return stream;
+    }
+
     fn signRequest(
         self: *S3Client,
         method: []const u8,
@@ -354,15 +637,21 @@ pub const S3Client = struct {
     ) ![]u8 {
         const date_stamp = amz_date[0..8];
 
+        var encoded_key: ?[]const u8 = null;
+        if (key) |k| {
+            encoded_key = try encodePath(self.allocator, k);
+        }
+        defer if (encoded_key) |ek| self.allocator.free(ek);
+
         var uri_buf: [2048]u8 = undefined;
         const canonical_uri = if (bucket) |b|
             if (key) |k|
                 if (self.config.endpoint != null)
-                    try std.fmt.bufPrint(&uri_buf, "/{s}/{s}", .{ b, k })
+                    std.fmt.bufPrint(&uri_buf, "/{s}/{s}", .{ b, encoded_key orelse k }) catch return error.RequestTooLong
                 else
-                    try std.fmt.bufPrint(&uri_buf, "/{s}", .{k})
+                    std.fmt.bufPrint(&uri_buf, "/{s}", .{encoded_key orelse k}) catch return error.RequestTooLong
             else if (self.config.endpoint != null)
-                try std.fmt.bufPrint(&uri_buf, "/{s}", .{b})
+                std.fmt.bufPrint(&uri_buf, "/{s}", .{b}) catch return error.RequestTooLong
             else
                 "/"
         else
@@ -370,10 +659,10 @@ pub const S3Client = struct {
 
         var headers_buf: [1024]u8 = undefined;
         const canonical_headers: []const u8 = if (copy_source) |src| blk: {
-            const written = std.fmt.bufPrint(&headers_buf, "host:{s}\nx-amz-content-sha256:{s}\nx-amz-copy-source:{s}\nx-amz-date:{s}", .{ host, content_hash, src, amz_date }) catch break :blk "";
+            const written = std.fmt.bufPrint(&headers_buf, "host:{s}\nx-amz-content-sha256:{s}\nx-amz-copy-source:{s}\nx-amz-date:{s}", .{ host, content_hash, src, amz_date }) catch return error.RequestTooLong;
             break :blk written;
         } else blk: {
-            const written = std.fmt.bufPrint(&headers_buf, "host:{s}\nx-amz-content-sha256:{s}\nx-amz-date:{s}", .{ host, content_hash, amz_date }) catch break :blk "";
+            const written = std.fmt.bufPrint(&headers_buf, "host:{s}\nx-amz-content-sha256:{s}\nx-amz-date:{s}", .{ host, content_hash, amz_date }) catch return error.RequestTooLong;
             break :blk written;
         };
         const signed_headers = if (copy_source != null)
@@ -397,15 +686,17 @@ pub const S3Client = struct {
     }
 
     fn buildUrl(self: *S3Client, bucket: []const u8, key: []const u8) ![]u8 {
+        const encoded_key = try encodePath(self.allocator, key);
+        defer self.allocator.free(encoded_key);
         if (self.config.endpoint) |endpoint| {
             if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
-                const clean_endpoint = std.mem.trimRight(u8, endpoint, "/");
-                return std.fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ clean_endpoint, bucket, key });
+                const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
+                return std.fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ clean_endpoint, bucket, encoded_key });
             } else {
-                return std.fmt.allocPrint(self.allocator, "https://{s}/{s}/{s}", .{ endpoint, bucket, key });
+                return std.fmt.allocPrint(self.allocator, "https://{s}/{s}/{s}", .{ endpoint, bucket, encoded_key });
             }
         }
-        return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com/{s}", .{ bucket, self.config.region, key });
+        return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com/{s}", .{ bucket, self.config.region, encoded_key });
     }
 
     fn buildBucketUrl(self: *S3Client, bucket: []const u8, query: ?[]const u8) ![]u8 {
@@ -414,7 +705,7 @@ pub const S3Client = struct {
 
         if (self.config.endpoint) |endpoint| {
             if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
-                const clean_endpoint = std.mem.trimRight(u8, endpoint, "/");
+                const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
                 return std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ clean_endpoint, bucket, query_part });
             } else {
                 return std.fmt.allocPrint(self.allocator, "https://{s}/{s}{s}", .{ endpoint, bucket, query_part });
@@ -426,7 +717,7 @@ pub const S3Client = struct {
     fn buildServiceUrl(self: *S3Client) ![]u8 {
         if (self.config.endpoint) |endpoint| {
             if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
-                return self.allocator.dupe(u8, std.mem.trimRight(u8, endpoint, "/"));
+                return self.allocator.dupe(u8, std.mem.trimEnd(u8, endpoint, "/"));
             } else {
                 return std.fmt.allocPrint(self.allocator, "https://{s}", .{endpoint});
             }
@@ -442,7 +733,7 @@ pub const S3Client = struct {
             } else if (std.mem.startsWith(u8, host, "http://")) {
                 host = host[7..];
             }
-            host = std.mem.trimRight(u8, host, "/");
+            host = std.mem.trimEnd(u8, host, "/");
             return self.allocator.dupe(u8, host);
         }
         return std.fmt.allocPrint(self.allocator, "{s}.s3.{s}.amazonaws.com", .{ bucket, self.config.region });
@@ -456,7 +747,7 @@ pub const S3Client = struct {
             } else if (std.mem.startsWith(u8, host, "http://")) {
                 host = host[7..];
             }
-            return self.allocator.dupe(u8, std.mem.trimRight(u8, host, "/"));
+            return self.allocator.dupe(u8, std.mem.trimEnd(u8, host, "/"));
         }
         return std.fmt.allocPrint(self.allocator, "s3.{s}.amazonaws.com", .{self.config.region});
     }
@@ -511,8 +802,12 @@ pub const S3Client = struct {
     fn sha256Hex(data: []const u8, out: *[64]u8) void {
         var hash: [32]u8 = undefined;
         crypto.hash.sha2.Sha256.hash(data, &hash, .{});
+        bytesToHex(&hash, out);
+    }
+
+    fn bytesToHex(bytes: []const u8, out: *[64]u8) void {
         const charset = "0123456789abcdef";
-        for (hash, 0..) |byte, i| {
+        for (bytes, 0..) |byte, i| {
             out[i * 2] = charset[byte >> 4];
             out[i * 2 + 1] = charset[byte & 0x0f];
         }
@@ -546,3 +841,107 @@ pub const S3Client = struct {
         return sig_hex;
     }
 };
+
+fn isUnreserved(byte: u8) bool {
+    return (byte >= 'A' and byte <= 'Z') or
+        (byte >= 'a' and byte <= 'z') or
+        (byte >= '0' and byte <= '9') or
+        byte == '-' or byte == '_' or byte == '.' or byte == '~';
+}
+
+fn percentEncode(allocator: Allocator, raw: []const u8, allow_slash: bool) ![]u8 {
+    var out = try std.ArrayList(u8).initCapacity(allocator, raw.len);
+    errdefer out.deinit(allocator);
+    const hex = "0123456789ABCDEF";
+
+    for (raw) |byte| {
+        if (isUnreserved(byte) or (allow_slash and byte == '/')) {
+            try out.append(allocator, byte);
+            continue;
+        }
+        try out.append(allocator, '%');
+        try out.append(allocator, hex[byte >> 4]);
+        try out.append(allocator, hex[byte & 0x0f]);
+    }
+
+    return out.toOwnedSlice(allocator);
+}
+
+fn encodePath(allocator: Allocator, raw: []const u8) ![]u8 {
+    return percentEncode(allocator, raw, true);
+}
+
+fn encodeQueryValue(allocator: Allocator, raw: []const u8) ![]u8 {
+    return percentEncode(allocator, raw, false);
+}
+
+test "encodePath keeps slashes and encodes reserved bytes" {
+    const encoded = try encodePath(std.testing.allocator, "a/b c?d");
+    defer std.testing.allocator.free(encoded);
+    try std.testing.expectEqualStrings("a/b%20c%3Fd", encoded);
+}
+
+test "encodePath escapes percent" {
+    const encoded = try encodePath(std.testing.allocator, "a%b");
+    defer std.testing.allocator.free(encoded);
+    try std.testing.expectEqualStrings("a%25b", encoded);
+}
+
+test "encodeQueryValue escapes separators" {
+    const encoded = try encodeQueryValue(std.testing.allocator, "a/b c&d");
+    defer std.testing.allocator.free(encoded);
+    try std.testing.expectEqualStrings("a%2Fb%20c%26d", encoded);
+}
+
+test "encodeQueryValue escapes percent" {
+    const encoded = try encodeQueryValue(std.testing.allocator, "a%b");
+    defer std.testing.allocator.free(encoded);
+    try std.testing.expectEqualStrings("a%25b", encoded);
+}
+
+test "buildUrl percent-encodes object keys" {
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    const url = try client.buildUrl("my-bucket", "path with space?.txt");
+    defer std.testing.allocator.free(url);
+    try std.testing.expectEqualStrings("https://example.com/my-bucket/path%20with%20space%3F.txt", url);
+}
+
+test "signRequest fails when headers exceed buffer" {
+    const host = try std.testing.allocator.alloc(u8, 2000);
+    defer std.testing.allocator.free(host);
+    @memset(host, 'a');
+
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = null,
+        },
+    };
+
+    try std.testing.expectError(error.RequestTooLong, client.signRequest(
+        "GET",
+        null,
+        null,
+        null,
+        host,
+        "20250101T000000Z",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        null,
+    ));
+}

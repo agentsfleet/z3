@@ -31,6 +31,17 @@ pub const S3Client = struct {
         max_body_size: usize = 100 * 1024 * 1024,
     };
 
+    pub const Metadata = struct {
+        name: []const u8,
+        value: []const u8,
+    };
+
+    pub const PutObjectOptions = struct {
+        request: RequestOptions = .{},
+        metadata: ?[]const Metadata = null,
+        content_type: ?[]const u8 = null,
+    };
+
     pub const GetFileOptions = struct {
         max_body_size: usize = 100 * 1024 * 1024,
         overwrite: bool = true,
@@ -57,6 +68,7 @@ pub const S3Client = struct {
     pub const PutFileOptions = struct {
         content_type: ?[]const u8 = "application/octet-stream",
         max_response_body_size: usize = 64 * 1024,
+        metadata: ?[]const Metadata = null,
     };
 
     pub const Response = struct {
@@ -283,6 +295,7 @@ pub const S3Client = struct {
             .content_hash = &content_hash_buf,
             .body_len = @intCast(size),
             .content_type = options.content_type,
+            .metadata = options.metadata,
             .options = .{ .max_body_size = options.max_response_body_size },
         });
         defer req.deinit();
@@ -292,6 +305,18 @@ pub const S3Client = struct {
 
     pub fn putObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8, options: RequestOptions) RequestError!Response {
         var req = try self.prepareRequest(.PUT, bucket, key, .{ .body = body, .options = options });
+        defer req.deinit();
+
+        return self.executeRequest(&req);
+    }
+
+    pub fn putObjectWithMetadata(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8, options: PutObjectOptions) RequestError!Response {
+        var req = try self.prepareRequest(.PUT, bucket, key, .{
+            .body = body,
+            .metadata = options.metadata,
+            .content_type = options.content_type,
+            .options = options.request,
+        });
         defer req.deinit();
 
         return self.executeRequest(&req);
@@ -317,9 +342,19 @@ pub const S3Client = struct {
     }
 
     /// List objects in bucket
+    pub const ListObjectsOptions = struct {
+        prefix: ?[]const u8 = null,
+        continuation_token: ?[]const u8 = null,
+        max_keys: ?u32 = null,
+    };
+
     pub fn listObjects(self: *S3Client, bucket: []const u8, prefix: ?[]const u8) RequestError!types.ListObjectsResult {
-        // Build query string with RFC3986 encoding for the prefix value.
-        const query = try self.buildListObjectsQuery(prefix);
+        return self.listObjectsWithOptions(bucket, .{ .prefix = prefix });
+    }
+
+    pub fn listObjectsWithOptions(self: *S3Client, bucket: []const u8, options: ListObjectsOptions) RequestError!types.ListObjectsResult {
+        // Build query string with RFC3986 encoding for query values.
+        const query = try self.buildListObjectsQuery(options);
         defer self.allocator.free(query);
 
         var req = try self.prepareRequest(.GET, bucket, null, .{ .query = query, .options = .{ .max_body_size = 10 * 1024 * 1024 } });
@@ -409,6 +444,11 @@ pub const S3Client = struct {
         }
     };
 
+    const HeaderToSign = struct {
+        name: []const u8,
+        value: []const u8,
+    };
+
     const RequestParams = struct {
         query: ?[]const u8 = null,
         body: []const u8 = "",
@@ -416,18 +456,81 @@ pub const S3Client = struct {
         content_hash: ?[]const u8 = null,
         body_len: ?usize = null,
         content_type: ?[]const u8 = null,
+        metadata: ?[]const Metadata = null,
         options: RequestOptions = .{
 
         },
     };
 
-    fn buildListObjectsQuery(self: *S3Client, prefix: ?[]const u8) ![]u8 {
-        if (prefix) |p| {
-            const encoded = try encodeQueryValue(self.allocator, p);
-            defer self.allocator.free(encoded);
-            return std.fmt.allocPrint(self.allocator, "list-type=2&prefix={s}", .{encoded});
+    const QueryParam = struct {
+        key: []const u8,
+        value: []const u8,
+    };
+
+    fn buildListObjectsQuery(self: *S3Client, options: ListObjectsOptions) ![]u8 {
+        var params = std.ArrayListUnmanaged(QueryParam){};
+        errdefer {
+            for (params.items) |item| {
+                self.allocator.free(item.key);
+                self.allocator.free(item.value);
+            }
+            params.deinit(self.allocator);
         }
-        return self.allocator.dupe(u8, "list-type=2");
+
+        try params.append(self.allocator, .{
+            .key = try encodeQueryValue(self.allocator, "list-type"),
+            .value = try encodeQueryValue(self.allocator, "2"),
+        });
+
+        if (options.prefix) |p| {
+            try params.append(self.allocator, .{
+                .key = try encodeQueryValue(self.allocator, "prefix"),
+                .value = try encodeQueryValue(self.allocator, p),
+            });
+        }
+
+        if (options.continuation_token) |token| {
+            try params.append(self.allocator, .{
+                .key = try encodeQueryValue(self.allocator, "continuation-token"),
+                .value = try encodeQueryValue(self.allocator, token),
+            });
+        }
+
+        if (options.max_keys) |max| {
+            var buf: [20]u8 = undefined;
+            const max_str = std.fmt.bufPrint(&buf, "{d}", .{max}) catch return error.RequestTooLong;
+            try params.append(self.allocator, .{
+                .key = try encodeQueryValue(self.allocator, "max-keys"),
+                .value = try encodeQueryValue(self.allocator, max_str),
+            });
+        }
+
+        std.sort.heap(QueryParam, params.items, {}, struct {
+            fn lessThan(_: void, a: QueryParam, b: QueryParam) bool {
+                if (std.mem.eql(u8, a.key, b.key)) {
+                    return std.mem.lessThan(u8, a.value, b.value);
+                }
+                return std.mem.lessThan(u8, a.key, b.key);
+            }
+        }.lessThan);
+
+        var query = std.ArrayListUnmanaged(u8){};
+        errdefer query.deinit(self.allocator);
+
+        for (params.items, 0..) |item, i| {
+            if (i > 0) try query.append(self.allocator, '&');
+            try query.appendSlice(self.allocator, item.key);
+            try query.append(self.allocator, '=');
+            try query.appendSlice(self.allocator, item.value);
+        }
+
+        const out = try query.toOwnedSlice(self.allocator);
+        for (params.items) |item| {
+            self.allocator.free(item.key);
+            self.allocator.free(item.value);
+        }
+        params.deinit(self.allocator);
+        return out;
     }
 
     fn buildCopySource(self: *S3Client, src_bucket: []const u8, src_key: []const u8) ![]u8 {
@@ -469,15 +572,38 @@ pub const S3Client = struct {
             break :blk &content_hash_buf;
         };
 
+        var headers_to_sign = std.ArrayListUnmanaged(HeaderToSign){};
+        defer headers_to_sign.deinit(self.allocator);
+        try headers_to_sign.append(self.allocator, .{ .name = "host", .value = host });
+        try headers_to_sign.append(self.allocator, .{ .name = "x-amz-content-sha256", .value = content_hash });
+        try headers_to_sign.append(self.allocator, .{ .name = "x-amz-date", .value = date_header });
+        if (params.copy_source) |src| {
+            try headers_to_sign.append(self.allocator, .{ .name = "x-amz-copy-source", .value = src });
+        }
+
+        var metadata_sign_names = std.ArrayListUnmanaged([]u8){};
+        defer {
+            for (metadata_sign_names.items) |name| {
+                self.allocator.free(name);
+            }
+            metadata_sign_names.deinit(self.allocator);
+        }
+        if (params.metadata) |metadata| {
+            for (metadata) |item| {
+                const raw_name = try std.fmt.allocPrint(self.allocator, "x-amz-meta-{s}", .{item.name});
+                defer self.allocator.free(raw_name);
+                const lower_name = try toLowerAlloc(self.allocator, raw_name);
+                try metadata_sign_names.append(self.allocator, lower_name);
+                try headers_to_sign.append(self.allocator, .{ .name = lower_name, .value = item.value });
+            }
+        }
+
         const auth_header = try self.signRequest(
             @tagName(method),
             bucket,
             key,
             params.query,
-            host,
-            date_header,
-            content_hash,
-            params.copy_source,
+            headers_to_sign.items,
         );
         errdefer self.allocator.free(auth_header);
 
@@ -491,6 +617,22 @@ pub const S3Client = struct {
 
         if (params.copy_source) |src| {
             try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "X-Amz-Copy-Source"), .value = try self.allocator.dupe(u8, src) });
+        }
+
+        if (params.metadata) |metadata| {
+            for (metadata) |item| {
+                const raw_name = try std.fmt.allocPrint(self.allocator, "x-amz-meta-{s}", .{item.name});
+                defer self.allocator.free(raw_name);
+                const lower_name = try toLowerAlloc(self.allocator, raw_name);
+                const value_dupe = try self.allocator.dupe(u8, item.value);
+                var owned = false;
+                errdefer if (!owned) {
+                    self.allocator.free(lower_name);
+                    self.allocator.free(value_dupe);
+                };
+                try temp_headers.append(self.allocator, .{ .name = lower_name, .value = value_dupe });
+                owned = true;
+            }
         }
 
         if (params.content_type) |content_type| {
@@ -642,11 +784,9 @@ pub const S3Client = struct {
         bucket: ?[]const u8,
         key: ?[]const u8,
         query: ?[]const u8,
-        host: []const u8,
-        amz_date: []const u8,
-        content_hash: []const u8,
-        copy_source: ?[]const u8,
+        headers: []const HeaderToSign,
     ) ![]u8 {
+        const amz_date = findHeaderValue(headers, "x-amz-date") orelse return error.RequestTooLong;
         const date_stamp = amz_date[0..8];
 
         var encoded_key: ?[]const u8 = null;
@@ -669,21 +809,36 @@ pub const S3Client = struct {
         else
             "/";
 
-        var headers_buf: [1024]u8 = undefined;
-        const canonical_headers: []const u8 = if (copy_source) |src| blk: {
-            const written = std.fmt.bufPrint(&headers_buf, "host:{s}\nx-amz-content-sha256:{s}\nx-amz-copy-source:{s}\nx-amz-date:{s}", .{ host, content_hash, src, amz_date }) catch return error.RequestTooLong;
-            break :blk written;
-        } else blk: {
-            const written = std.fmt.bufPrint(&headers_buf, "host:{s}\nx-amz-content-sha256:{s}\nx-amz-date:{s}", .{ host, content_hash, amz_date }) catch return error.RequestTooLong;
-            break :blk written;
-        };
-        const signed_headers = if (copy_source != null)
-            "host;x-amz-content-sha256;x-amz-copy-source;x-amz-date"
-        else
-            "host;x-amz-content-sha256;x-amz-date";
+        const headers_sorted = try self.allocator.alloc(HeaderToSign, headers.len);
+        defer self.allocator.free(headers_sorted);
+        std.mem.copyForwards(HeaderToSign, headers_sorted, headers);
+
+        std.sort.heap(HeaderToSign, headers_sorted, {}, struct {
+            fn lessThan(_: void, a: HeaderToSign, b: HeaderToSign) bool {
+                return std.mem.lessThan(u8, a.name, b.name);
+            }
+        }.lessThan);
+
+        var canonical_headers = std.ArrayListUnmanaged(u8){};
+        defer canonical_headers.deinit(self.allocator);
+        var signed_headers = std.ArrayListUnmanaged(u8){};
+        defer signed_headers.deinit(self.allocator);
+
+        for (headers_sorted, 0..) |header, i| {
+            if (i > 0) {
+                try signed_headers.append(self.allocator, ';');
+                try canonical_headers.append(self.allocator, '\n');
+            }
+            try signed_headers.appendSlice(self.allocator, header.name);
+
+            try canonical_headers.appendSlice(self.allocator, header.name);
+            try canonical_headers.append(self.allocator, ':');
+            try canonical_headers.appendSlice(self.allocator, header.value);
+        }
 
         var canonical_buf: [4096]u8 = undefined;
-        const canonical_request = std.fmt.bufPrint(&canonical_buf, "{s}\n{s}\n{s}\n{s}\n\n{s}\n{s}", .{method, canonical_uri, query orelse "", canonical_headers, signed_headers, content_hash,}) catch return error.RequestTooLong;
+        const content_hash = findHeaderValue(headers_sorted, "x-amz-content-sha256") orelse return error.RequestTooLong;
+        const canonical_request = std.fmt.bufPrint(&canonical_buf, "{s}\n{s}\n{s}\n{s}\n\n{s}\n{s}", .{ method, canonical_uri, query orelse "", canonical_headers.items, signed_headers.items, content_hash }) catch return error.RequestTooLong;
 
         var canonical_hash_buf: [64]u8 = undefined;
         sha256Hex(canonical_request, &canonical_hash_buf);
@@ -694,7 +849,7 @@ pub const S3Client = struct {
 
         const sig_hex = try self.computeSignature(date_stamp, string_to_sign);
 
-        return std.fmt.allocPrint(self.allocator, "AWS4-HMAC-SHA256 Credential={s}/{s}/{s}/s3/aws4_request, SignedHeaders={s}, Signature={s}", .{ self.config.access_key_id, date_stamp, self.config.region, signed_headers, &sig_hex });
+        return std.fmt.allocPrint(self.allocator, "AWS4-HMAC-SHA256 Credential={s}/{s}/{s}/s3/aws4_request, SignedHeaders={s}, Signature={s}", .{ self.config.access_key_id, date_stamp, self.config.region, signed_headers.items, &sig_hex });
     }
 
     fn buildUrl(self: *S3Client, bucket: []const u8, key: []const u8) ![]u8 {
@@ -854,6 +1009,21 @@ pub const S3Client = struct {
     }
 };
 
+fn toLowerAlloc(allocator: Allocator, input: []const u8) ![]u8 {
+    var out = try allocator.alloc(u8, input.len);
+    for (input, 0..) |ch, i| {
+        out[i] = std.ascii.toLower(ch);
+    }
+    return out;
+}
+
+fn findHeaderValue(headers: []const S3Client.HeaderToSign, name: []const u8) ?[]const u8 {
+    for (headers) |header| {
+        if (std.mem.eql(u8, header.name, name)) return header.value;
+    }
+    return null;
+}
+
 fn isUnreserved(byte: u8) bool {
     return (byte >= 'A' and byte <= 'Z') or
         (byte >= 'a' and byte <= 'z') or
@@ -929,7 +1099,7 @@ test "buildUrl percent-encodes object keys" {
     try std.testing.expectEqualStrings("https://example.com/my-bucket/path%20with%20space%3F.txt", url);
 }
 
-test "signRequest fails when headers exceed buffer" {
+test "signRequest includes large host headers" {
     const host = try std.testing.allocator.alloc(u8, 2000);
     defer std.testing.allocator.free(host);
     @memset(host, 'a');
@@ -946,14 +1116,80 @@ test "signRequest fails when headers exceed buffer" {
         },
     };
 
-    try std.testing.expectError(error.RequestTooLong, client.signRequest(
+    const auth = try client.signRequest(
         "GET",
         null,
         null,
         null,
-        host,
-        "20250101T000000Z",
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        null,
-    ));
+        &[_]S3Client.HeaderToSign{
+            .{ .name = "host", .value = host },
+            .{ .name = "x-amz-date", .value = "20250101T000000Z" },
+            .{ .name = "x-amz-content-sha256", .value = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+        },
+    );
+    defer std.testing.allocator.free(auth);
+    try std.testing.expect(auth.len > 0);
+}
+
+test "buildListObjectsQuery supports prefix and continuation token" {
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    const query = try client.buildListObjectsQuery(.{
+        .prefix = "a/b c",
+        .continuation_token = "token+1",
+        .max_keys = 50,
+    });
+    defer std.testing.allocator.free(query);
+    try std.testing.expectEqualStrings("continuation-token=token%2B1&list-type=2&max-keys=50&prefix=a%2Fb%20c", query);
+}
+
+test "prepareRequest signs metadata headers" {
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    const metadata = [_]S3Client.Metadata{
+        .{ .name = "Color", .value = "blue" },
+    };
+
+    var req = try client.prepareRequest(.PUT, "bucket", "key", .{
+        .body = "data",
+        .metadata = &metadata,
+    });
+    defer req.deinit();
+
+    var saw_meta = false;
+    var saw_signed = false;
+    for (req.headers) |header| {
+        if (std.mem.eql(u8, header.name, "x-amz-meta-color")) saw_meta = true;
+        if (std.mem.eql(u8, header.name, "Authorization")) {
+            if (std.mem.indexOf(u8, header.value, "SignedHeaders=")) |idx| {
+                const tail = header.value[idx..];
+                if (std.mem.indexOf(u8, tail, "x-amz-meta-color") != null) {
+                    saw_signed = true;
+                }
+            }
+        }
+    }
+
+    try std.testing.expect(saw_meta);
+    try std.testing.expect(saw_signed);
 }

@@ -154,6 +154,14 @@ test "parseListObjects" {
     try testing.expectEqual(result.objects[0].size, 12);
 }
 
+test "parseListObjects with continuation token" {
+    const xml_data = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>next-token</NextContinuationToken><Contents><Key>my-key-1</Key><LastModified>2025-12-21T01:43:47.314Z</LastModified><ETag>\"f0e633243609a75b2a4949cb431e333e\"</ETag><Size>12</Size></Contents></ListBucketResult>";
+    var result = try parseListObjects(testing.allocator, xml_data);
+    defer result.deinit();
+    try testing.expect(result.is_truncated);
+    try testing.expectEqualStrings(result.next_continuation_token.?, "next-token");
+}
+
 test "parseListBuckets" {
     const xml_data = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListAllMyBucketsResult><Owner><ID>12345</ID><DisplayName>my-user</DisplayName></Owner><Buckets><Bucket><Name>bucket-1</Name><CreationDate>2025-12-21T01:13:10.000Z</CreationDate></Bucket><Bucket><Name>bucket-2</Name><CreationDate>2025-12-21T01:13:10.000Z</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>";
     var result = try parseListBuckets(testing.allocator, xml_data);

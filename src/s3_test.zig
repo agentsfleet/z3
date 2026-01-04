@@ -7,6 +7,8 @@ const Io = std.Io;
 const test_bucket = "zig-s3-test-bucket";
 const test_key = "test-object.txt";
 const test_content = "Hello from Zig S3 client test!";
+const test_meta_key = "test-object-meta.txt";
+const test_meta_content = "Hello with metadata";
 
 const TestContext = struct {
     gpa: std.heap.GeneralPurposeAllocator(.{}),
@@ -84,9 +86,31 @@ test "02_putObject" {
     std.debug.print("=== DONE 02_putObject: {} ===\n", .{response.status});
 }
 
+// 2b. Put object with metadata
+test "02b_putObjectWithMetadata" {
+    std.debug.print("\n=== START 02b_putObjectWithMetadata ===\n", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+    std.debug.print("  calling putObjectWithMetadata...\n", .{});
+
+    const metadata = [_]S3Client.Metadata{
+        .{ .name = "color", .value = "blue" },
+        .{ .name = "owner", .value = "zig-test" },
+    };
+    var response = try ctx.client.putObjectWithMetadata(test_bucket, test_meta_key, test_meta_content, .{
+        .metadata = &metadata,
+    });
+    defer response.deinit();
+    std.debug.print("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+
+    try std.testing.expect(response.status == .ok or response.status == .created);
+    std.debug.print("=== DONE 02b_putObjectWithMetadata: {} ===\n", .{response.status});
+}
+
 // 2b. Put object (file)
-test "02b_putFile" {
-    std.debug.print("\n=== START 02b_putFile ===\n", .{});
+test "02c_putFile" {
+    std.debug.print("\n=== START 02c_putFile ===\n", .{});
 
     var ctx = try TestContext.init();
     defer ctx.deinit();
@@ -111,12 +135,12 @@ test "02b_putFile" {
     std.debug.print("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
 
     try std.testing.expect(response.status == .ok or response.status == .created);
-    std.debug.print("=== DONE 02b_putFile: {} ===\n", .{response.status});
+    std.debug.print("=== DONE 02c_putFile: {} ===\n", .{response.status});
 }
 
 // 2c. Get object (file)
-test "02c_getFile" {
-    std.debug.print("\n=== START 02c_getFile ===\n", .{});
+test "02d_getFile" {
+    std.debug.print("\n=== START 02d_getFile ===\n", .{});
 
     var ctx = try TestContext.init();
     defer ctx.deinit();
@@ -146,7 +170,7 @@ test "02c_getFile" {
 
     try std.testing.expectEqualStrings(test_content, data);
     try std.testing.expectEqual(@as(u64, test_content.len), @as(u64, data.len));
-    std.debug.print("=== DONE 02c_getFile: {d} bytes ===\n", .{data.len});
+    std.debug.print("=== DONE 02d_getFile: {d} bytes ===\n", .{data.len});
 }
 
 // 3. List buckets
@@ -195,6 +219,40 @@ test "04_listObjects" {
     }
     try std.testing.expect(found);
     std.debug.print("=== DONE 04_listObjects: success ({d} objects) ===\n", .{result.objects.len});
+}
+
+// 4b. List objects with pagination
+test "04b_listObjectsPagination" {
+    std.debug.print("\n=== START 04b_listObjectsPagination ===\n", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+    std.debug.print("  calling listObjectsWithOptions...\n", .{});
+
+    const extra_key = "test-object-paginate-2.txt";
+    var response = try ctx.client.putObject(test_bucket, extra_key, test_content);
+    defer response.deinit();
+    try std.testing.expect(response.status == .ok or response.status == .created);
+
+    var first = try ctx.client.listObjectsWithOptions(test_bucket, .{
+        .max_keys = 1,
+    });
+    defer first.deinit();
+    try std.testing.expect(first.is_truncated);
+    try std.testing.expect(first.next_continuation_token != null);
+
+    var second = try ctx.client.listObjectsWithOptions(test_bucket, .{
+        .max_keys = 1,
+        .continuation_token = first.next_continuation_token.?,
+    });
+    defer second.deinit();
+    try std.testing.expect(second.objects.len > 0);
+
+    var delete_extra = try ctx.client.deleteObject(test_bucket, extra_key);
+    defer delete_extra.deinit();
+    try std.testing.expect(delete_extra.status == .no_content or delete_extra.status == .ok);
+
+    std.debug.print("=== DONE 04b_listObjectsPagination: {d} + {d} ===\n", .{ first.objects.len, second.objects.len });
 }
 
 // 5. Get object
@@ -254,6 +312,12 @@ test "07_deleteObject" {
     std.debug.print("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
     // 204 No Content is expected for successful delete
     try std.testing.expect(response.status == .no_content or response.status == .ok);
+
+    var meta_response = try ctx.client.deleteObject(test_bucket, test_meta_key);
+    defer meta_response.deinit();
+    std.debug.print("  Got response: {} body_len={d}\n", .{ meta_response.status, meta_response.body.len });
+    try std.testing.expect(meta_response.status == .no_content or meta_response.status == .ok);
+
     std.debug.print("=== DONE 07_deleteObject: {} ===\n", .{response.status});
 }
 

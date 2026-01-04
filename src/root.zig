@@ -4,7 +4,6 @@ const std = @import("std");
 
 pub const S3Client = @import("s3_client.zig").S3Client;
 pub const types = @import("types.zig");
-pub const xml = @import("xml.zig");
 
 // Re-export commonly used types
 pub const BucketInfo = types.BucketInfo;
@@ -16,5 +15,4 @@ pub const S3Error = types.S3Error;
 test {
     _ = @import("s3_client.zig");
     _ = @import("types.zig");
-    _ = @import("xml.zig");
 }

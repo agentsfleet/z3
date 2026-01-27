@@ -5,29 +5,27 @@ const S3Client = @import("s3").S3Client;
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
 
-    var threaded: Io.Threaded = .init(allocator, .{});
+    var threaded: Io.Threaded = .init(gpa, .{ .environ = init.minimal.environ });
     defer threaded.deinit();
     const io = threaded.io();
 
-    return runMain(allocator, io);
+    return runMain(gpa, io, init.environ_map);
 }
 
-fn runMain(allocator: Allocator, io: Io) !void {
-    const access_key = std.posix.getenv("AWS_ACCESS_KEY_ID") orelse {
+fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
+    const access_key = env.get("AWS_ACCESS_KEY_ID") orelse {
         std.debug.print("AWS_ACCESS_KEY_ID not set\n", .{});
         return;
     };
-    const secret_key = std.posix.getenv("AWS_SECRET_ACCESS_KEY") orelse {
+    const secret_key = env.get("AWS_SECRET_ACCESS_KEY") orelse {
         std.debug.print("AWS_SECRET_ACCESS_KEY not set\n", .{});
         return;
     };
-    const region = std.posix.getenv("AWS_REGION") orelse "auto";
-    const endpoint = std.posix.getenv("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
+    const region = env.get("AWS_REGION") orelse "auto";
+    const endpoint = env.get("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
 
     const bucket = "code";
 

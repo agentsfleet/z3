@@ -15,24 +15,30 @@ const TestContext = struct {
     threaded: Io.Threaded,
     client: S3Client,
 
+    fn getEnviron() [:null]const ?[*:0]const u8 {
+        var env_count: usize = 0;
+        while (std.c.environ[env_count] != null) : (env_count += 1) {}
+        return @ptrCast(std.c.environ[0..env_count :null]);
+    }
+
     pub fn init() !*TestContext {
-        const access_key = std.posix.getenv("AWS_ACCESS_KEY_ID") orelse return error.SkipZigTest;
-        const secret_key = std.posix.getenv("AWS_SECRET_ACCESS_KEY") orelse return error.SkipZigTest;
-        const region = std.posix.getenv("AWS_REGION") orelse "auto";
-        const endpoint = std.posix.getenv("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
+        const access_key = std.c.getenv("AWS_ACCESS_KEY_ID") orelse return error.SkipZigTest;
+        const secret_key = std.c.getenv("AWS_SECRET_ACCESS_KEY") orelse return error.SkipZigTest;
+        const region = std.c.getenv("AWS_REGION") orelse "auto";
+        const endpoint = std.c.getenv("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
 
         const config: S3Client.Config = .{
-            .access_key_id = access_key,
-            .secret_access_key = secret_key,
-            .region = region,
-            .endpoint = endpoint,
+            .access_key_id = std.mem.sliceTo(access_key, 0),
+            .secret_access_key = std.mem.sliceTo(secret_key, 0),
+            .region = std.mem.sliceTo(region, 0),
+            .endpoint = std.mem.sliceTo(endpoint, 0),
         };
 
         const ctx = try std.testing.allocator.create(TestContext);
         ctx.gpa = .{};
         const allocator = ctx.gpa.allocator();
 
-        ctx.threaded = Io.Threaded.init(allocator, .{});
+        ctx.threaded = Io.Threaded.init(allocator, .{ .environ = .{ .block = getEnviron() } });
         const io = ctx.threaded.io();
         std.debug.print("  IO initialized\n", .{});
 

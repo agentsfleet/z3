@@ -44,8 +44,8 @@ pub fn encodeQueryValue(allocator: Allocator, raw: []const u8) ![]u8 {
 }
 
 pub fn getUnixTimestamp() i64 {
-    var tv: std.posix.timeval = undefined;
-    std.posix.gettimeofday(&tv, null);
+    var tv: std.posix.system.timeval = undefined;
+    _ = std.posix.system.gettimeofday(&tv, null);
     return tv.sec;
 }
 

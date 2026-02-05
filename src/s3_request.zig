@@ -88,7 +88,16 @@ pub fn prepareRequest(
     errdefer self.allocator.free(auth_header);
 
     var temp_headers = std.ArrayListUnmanaged(http.Header){};
-    defer temp_headers.deinit(self.allocator);
+    var temp_headers_moved = false;
+    defer {
+        if (!temp_headers_moved) {
+            for (temp_headers.items) |header| {
+                self.allocator.free(header.name);
+                self.allocator.free(header.value);
+            }
+            temp_headers.deinit(self.allocator);
+        }
+    }
 
     try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "X-Amz-Date"), .value = try self.allocator.dupe(u8, date_header) });
     try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "X-Amz-Content-Sha256"), .value = try self.allocator.dupe(u8, content_hash) });
@@ -128,6 +137,7 @@ pub fn prepareRequest(
     }
 
     const owned_headers = try temp_headers.toOwnedSlice(self.allocator);
+    temp_headers_moved = true;
 
     return request_types.UnifiedRequest{
         .allocator = self.allocator,
@@ -166,7 +176,7 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
     var redirect_buffer: [8 * 1024]u8 = undefined;
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
-    const response_body: []u8 = if (response.head.status == .no_content or req.http_method == .HEAD or req.http_method == .DELETE)
+    const response_body: []u8 = if (response.head.status == .no_content or req.http_method == .HEAD)
         ""
     else blk: {
         var transfer_buffer: [64]u8 = undefined;
@@ -206,7 +216,7 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
     var redirect_buffer: [8 * 1024]u8 = undefined;
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
-    const response_body: []u8 = if (response.head.status == .no_content or req.http_method == .HEAD or req.http_method == .DELETE)
+    const response_body: []u8 = if (response.head.status == .no_content or req.http_method == .HEAD)
         ""
     else blk: {
         var transfer_buffer: [64]u8 = undefined;
@@ -240,7 +250,8 @@ pub fn executeRequestStream(self: *S3Client, req_in: request_types.UnifiedReques
         request_ptr.sendBodiless() catch return error.SendFailed;
         request_ptr.connection.?.flush() catch return error.FlushFailed;
     } else {
-        request_ptr.transfer_encoding = .{ .content_length = req.body.len };
+        std.debug.assert(req.body.len == req.content_length);
+        request_ptr.transfer_encoding = .{ .content_length = req.content_length };
         var body_writer = request_ptr.sendBody(&.{}) catch return error.SendFailed;
         body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
         body_writer.end() catch return error.WriteFailed;

@@ -18,28 +18,24 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // Example executable
-    const exe = b.addExecutable(.{
-        .name = "s3-example",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "s3", .module = s3_mod },
-            },
-        }),
-    });
+    const examples = .{
+        .{ "example-get-multipart", "examples/get_object_multipart.zig" },
+        .{ "example-put-fetch-async", "examples/put_fetch_async.zig" },
+    };
 
-    b.installArtifact(exe);
+    inline for (examples) |ex| {
+        const example_exe = b.addExecutable(.{
+            .name = ex[0],
+            .root_module = b.createModule(.{ .root_source_file = b.path(ex[1]), .target = target, .optimize = optimize, .imports = &.{.{ .name = "s3", .module = s3_mod }} }),
+        });
 
-    const run_step = b.step("run", "Run the example");
-    const run_cmd = b.addRunArtifact(exe);
-    run_step.dependOn(&run_cmd.step);
-    run_cmd.step.dependOn(b.getInstallStep());
+        b.installArtifact(example_exe);
 
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+        const run = b.addRunArtifact(example_exe);
+        if (b.args) |args| run.addArgs(args);
+
+        const step = b.step(ex[0], "Run " ++ ex[0]);
+        step.dependOn(&run.step);
     }
 
     // Tests for S3 client

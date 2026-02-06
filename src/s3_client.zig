@@ -37,6 +37,15 @@ pub const PutObjectOptions = struct {
     content_type: ?[]const u8 = null,
 };
 
+pub const ContentRange = struct {
+    start: usize,
+    end: usize,
+
+    pub fn set(start: usize, end: usize) ContentRange {
+        return ContentRange{ .start = start, .end = end };
+    }
+};
+
 pub const GetFileOptions = struct {
     max_body_size: usize = 100 * 1024 * 1024,
     overwrite: bool = true,

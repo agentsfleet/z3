@@ -112,6 +112,13 @@ pub fn getObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8
     return request.executeRequest(self, &req);
 }
 
+pub fn getObjectRangeWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, range: S3Client.ContentRange, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
+    var req = try request.prepareRequest(self, .GET, bucket, key, .{ .range = range, .options = options });
+    defer req.deinit();
+
+    return request.executeRequest(self, &req);
+}
+
 /// PUT object to S3
 pub fn putObject(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8) S3Client.RequestError!S3Client.Response {
     return self.putObjectWithOptions(bucket, key, body, .{});

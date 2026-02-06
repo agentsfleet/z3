@@ -13,6 +13,7 @@ const RequestParams = struct {
     copy_source: ?[]const u8 = null,
     content_hash: ?[]const u8 = null,
     body_len: ?usize = null,
+    range: ?S3Client.ContentRange = null,
     content_type: ?[]const u8 = null,
     metadata: ?[]const S3Client.Metadata = null,
     options: S3Client.RequestOptions = .{},
@@ -128,6 +129,15 @@ pub fn prepareRequest(
         try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Content-Type"), .value = try self.allocator.dupe(u8, content_type) });
     } else if (method == .PUT and body_len > 0) {
         try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Content-Type"), .value = try self.allocator.dupe(u8, "application/octet-stream") });
+    }
+
+    if (params.range) |range| {
+        const range_fmt = try std.fmt.allocPrint(self.allocator, "bytes={d}-{d}", .{ range.start, range.end });
+        defer self.allocator.free(range_fmt);
+        try temp_headers.append(self.allocator, .{
+            .name = try self.allocator.dupe(u8, "Range"),
+            .value = try self.allocator.dupe(u8, range_fmt),
+        });
     }
 
     // Add Content-Length: 0 and Connection: close for DELETE to work around TLS+async Io issue

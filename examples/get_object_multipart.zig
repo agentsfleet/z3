@@ -43,7 +43,10 @@ pub fn main(init: std.process.Init) !void {
     defer client.deinit();
 
     var head_obj_resp = try client.headObject(bucket, key);
+    defer head_obj_resp.deinit();
 
-    std.debug.print("Status:\n{t}\n", .{head_obj_resp.status});
-    std.debug.print("Body:\n{s}\n", .{head_obj_resp.body});
+    var resp = try client.getObjectWithOptions(bucket, key, .{ .range = .{ .start = 2, .end = 4 } });
+    defer resp.deinit();
+
+    std.debug.print("Request status: {t}! Object range received: {s}\n", .{ resp.status, resp.body });
 }

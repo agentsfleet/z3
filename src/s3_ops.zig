@@ -41,8 +41,8 @@ pub fn getObject(self: *S3Client, bucket: []const u8, key: []const u8) S3Client.
 }
 
 /// GET object from S3 as a streaming response.
-pub fn getObjectStream(self: *S3Client, bucket: []const u8, key: []const u8) S3Client.RequestError!S3Client.ObjectStream {
-    const req = try request.prepareRequest(self, .GET, bucket, key, .{});
+pub fn getObjectStreamWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.GetObjectOptions) S3Client.RequestError!S3Client.ObjectStream {
+    const req = try request.prepareRequest(self, .GET, bucket, key, .{ .range = options.range, .options = options.request });
     return request.executeRequestStream(self, req);
 }
 
@@ -54,7 +54,7 @@ pub fn getFile(
     dest_path: []const u8,
     options: S3Client.GetFileOptions,
 ) S3Client.GetFileError!S3Client.GetFileResult {
-    var stream = try self.getObjectStream(bucket, key);
+    var stream = try self.getObjectStream(bucket, key, .{});
     defer stream.deinit();
 
     if (stream.status() != .ok) {
@@ -105,36 +105,8 @@ pub fn getFile(
     };
 }
 
-pub fn getObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
-    var req = try request.prepareRequest(self, .GET, bucket, key, .{ .options = options });
-    defer req.deinit();
-
-    return request.executeRequest(self, &req);
-}
-
-/// Initiate a `Get-Object` call to an S3 storage to get a defined range
-/// of bytes from the named object.
-///
-/// example:
-///
-/// ```zig
-/// // ** //
-/// var client = try S3Client.init(allocator, .{
-///     .access_key_id = access_key,
-///     .secret_access_key = secret_key,
-///     .region = region,
-///     .endpoint = endpoint,
-/// }, .{ .io = io });
-/// defer client.deinit();
-///
-/// // Get byte range from byte 200 to 400
-/// var get_resp = try client.getObjectRangeWithOptions(bucket, key, .{ start = 200, end = 400 }, .{});
-/// ```
-///
-/// This makes multipart downloads possible by defining chunks of the object
-/// and get them in parallel.
-pub fn getObjectRangeWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, range: S3Client.ContentRange, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
-    var req = try request.prepareRequest(self, .GET, bucket, key, .{ .range = range, .options = options });
+pub fn getObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.GetObjectOptions) S3Client.RequestError!S3Client.Response {
+    var req = try request.prepareRequest(self, .GET, bucket, key, .{ .range = options.range, .options = options.request });
     defer req.deinit();
 
     return request.executeRequest(self, &req);

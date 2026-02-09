@@ -276,7 +276,7 @@ test "06_getObjectStream" {
     defer ctx.deinit();
     std.log.info("  calling getObjectStream...", .{});
 
-    var stream = try ctx.client.getObjectStream(test_bucket, test_key);
+    var stream = try ctx.client.getObjectStream(test_bucket, test_key, .{});
     defer stream.deinit();
 
     const reader = try stream.reader();
@@ -293,6 +293,23 @@ test "06_getObjectStream" {
 
     try std.testing.expectEqualStrings(test_content, buf.items);
     std.log.info("=== DONE 06_getObjectStream: {} - {d} bytes ===\n", .{ stream.status(), buf.items.len });
+}
+
+// 6b. Get object
+test "06b_getObjectRange" {
+    std.log.info("=== START 06b_getObjectRange ===", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+    std.log.info("  calling getObjectWithOptions...", .{});
+
+    var response = try ctx.client.getObjectWithOptions(test_bucket, test_key, .{ .range = .{ .start = 6, .end = 13 } });
+    defer response.deinit();
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+
+    try std.testing.expect(response.status == .ok);
+    try std.testing.expectEqualStrings(test_content[6..14], response.body);
+    std.log.info("=== DONE 06b_getObjectRange: {} - \"{s}\" ===\n", .{ response.status, response.body });
 }
 
 // 7. Delete object

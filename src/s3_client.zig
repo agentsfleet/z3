@@ -37,13 +37,16 @@ pub const PutObjectOptions = struct {
     content_type: ?[]const u8 = null,
 };
 
+/// Options that can be passed to a `Get-Object` request.
+pub const GetObjectOptions = struct {
+    request: RequestOptions = .{},
+    range: ?ContentRange = null,
+};
+
+/// Define a range of bytes to perform an `Object` action on
 pub const ContentRange = struct {
     start: usize,
     end: usize,
-
-    pub fn set(start: usize, end: usize) ContentRange {
-        return ContentRange{ .start = start, .end = end };
-    }
 };
 
 pub const GetFileOptions = struct {

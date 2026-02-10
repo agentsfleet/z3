@@ -276,7 +276,7 @@ test "06_getObjectStream" {
     defer ctx.deinit();
     std.log.info("  calling getObjectStream...", .{});
 
-    var stream = try ctx.client.getObjectStream(test_bucket, test_key, .{});
+    var stream = try ctx.client.getObjectStreamWithOptions(test_bucket, test_key, .{});
     defer stream.deinit();
 
     const reader = try stream.reader();

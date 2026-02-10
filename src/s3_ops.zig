@@ -54,7 +54,7 @@ pub fn getFile(
     dest_path: []const u8,
     options: S3Client.GetFileOptions,
 ) S3Client.GetFileError!S3Client.GetFileResult {
-    var stream = try self.getObjectStream(bucket, key, .{});
+    var stream = try self.getObjectStreamWithOptions(bucket, key, .{});
     defer stream.deinit();
 
     if (stream.status() != .ok) {

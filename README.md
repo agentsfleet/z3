@@ -43,13 +43,11 @@ Here is a simple example of fetching objects in parallel:
 const std = @import("std");
 const S3Client = @import("s3").S3Client;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
 
     // Initialize async IO
-    var threaded: std.Io.Threaded = .init(allocator);
+    var threaded: Io.Threaded = .init(gpa, .{ .environ = init.minimal.environ });
     defer threaded.deinit();
     const io = threaded.io();
 
@@ -88,7 +86,8 @@ pub fn main() !void {
 
 ### Object Operations
 - `getObject(bucket, key)`
-- `getObjectStream(bucket, key)`
+- `getObjectWithOptions(bucket, key, options)`
+- `getObjectStreamWithOptions(bucket, key, options)`
 - `getFile(bucket, key, dest_path, options)`
 - `putObject(bucket, key, body)`
 - `putObjectWithMetadata(bucket, key, body, options)`

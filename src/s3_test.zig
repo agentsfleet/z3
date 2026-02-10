@@ -307,7 +307,7 @@ test "06b_getObjectRange" {
     defer response.deinit();
     std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
 
-    try std.testing.expect(response.status == .ok);
+    try std.testing.expect(response.status == .partial_content);
     try std.testing.expectEqualStrings(test_content[6..14], response.body);
     std.log.info("=== DONE 06b_getObjectRange: {} - \"{s}\" ===\n", .{ response.status, response.body });
 }

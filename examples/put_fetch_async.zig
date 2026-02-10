@@ -27,7 +27,10 @@ fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
     const region = env.get("AWS_REGION") orelse "auto";
     const endpoint = env.get("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
 
-    const bucket = "code";
+    const bucket = env.get("S3_BUCKET") orelse {
+        std.debug.print("S3_BUCKET not set\n", .{});
+        return;
+    };
 
     var client = try S3Client.init(allocator, .{
         .access_key_id = access_key,
@@ -59,7 +62,7 @@ fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
         }
     }
 
-    var list_res = try client.listObjects("code", "");
+    var list_res = try client.listObjects(bucket, "");
     defer list_res.deinit();
     std.debug.print("Listing all the files!!\n", .{});
     for (list_res.objects) |obj| {

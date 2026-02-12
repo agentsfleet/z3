@@ -44,6 +44,9 @@ pub const GetObjectOptions = struct {
 };
 
 /// Define a range of bytes to perform an `Object` action on
+///
+/// In contrast to regular byte slices, the end value of the content
+/// range for an http request is *inclusive*
 pub const ContentRange = struct {
     start: usize,
     end: usize,

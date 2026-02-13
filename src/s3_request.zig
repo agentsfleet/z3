@@ -28,7 +28,7 @@ pub fn prepareRequest(
 ) !request_types.UnifiedRequest {
     const url_str = if (bucket) |b|
         if (key) |k|
-            try url.buildUrl(self, b, k)
+            try url.buildUrl(self, b, k, params.query)
         else
             try url.buildBucketUrl(self, b, params.query)
     else
@@ -164,10 +164,17 @@ pub fn prepareRequest(
 pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Client.Response {
     const uri = std.Uri.parse(req.url) catch return error.InvalidUri;
 
+    // std.log.debug("URI: {}", .{uri});
+
     var http_req = self.http_client.request(req.http_method, uri, .{
         .extra_headers = req.headers,
     }) catch return error.ConnectionFailed;
     defer http_req.deinit();
+
+    std.log.info("URI Scheme: {s}", .{http_req.uri.host.?.percent_encoded});
+    std.log.info("URI: {s}", .{http_req.uri.path.percent_encoded});
+
+    // std.log.info("REQUEST:\n{any}", .{http_req});
 
     if (req.is_bodiless) {
         http_req.sendBodiless() catch return error.SendFailed;

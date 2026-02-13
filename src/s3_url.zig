@@ -20,18 +20,30 @@ fn endpointHostSlice(endpoint: []const u8) []const u8 {
     return std.mem.trim(u8, host, "/");
 }
 
-pub fn buildUrl(self: *S3Client, bucket: []const u8, key: []const u8) ![]u8 {
+pub fn buildUrl(self: *S3Client, bucket: []const u8, key: []const u8, query: ?[]const u8) ![]u8 {
+    const query_part = if (query) |q| try std.fmt.allocPrint(self.allocator, "?{s}", .{q}) else "";
+    defer if (query != null) self.allocator.free(query_part);
+
     const encoded_key = try internal.encodePath(self.allocator, key);
     defer self.allocator.free(encoded_key);
+
     if (self.config.endpoint) |endpoint| {
+        const buf: [1024]u8 = undefined;
+
         if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
             const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
-            return std.fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ clean_endpoint, bucket, encoded_key });
+            const path = if (self.config.virtual_host_style) try std.fmt.bufPrint(buf, "{s}", .{encoded_key}) else try std.fmt.bufPrint(buf, "{s}/{s}", .{ bucket, encoded_key });
+
+            const url = try std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ clean_endpoint, path, query_part });
+            return url;
         } else {
-            return std.fmt.allocPrint(self.allocator, "https://{s}/{s}/{s}", .{ endpoint, bucket, encoded_key });
+            const path = if (self.config.virtual_host_style) try std.fmt.bufPrint(buf, "{s}", .{encoded_key}) else try std.fmt.bufPrint(buf, "{s}/{s}", .{ bucket, encoded_key });
+
+            const url = try std.fmt.allocPrint(self.allocator, "https://{s}/{s}{s}", .{ endpoint, path, query_part });
+            return url;
         }
     }
-    return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com/{s}", .{ bucket, self.config.region, encoded_key });
+    return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com/{s}{s}", .{ bucket, self.config.region, encoded_key, query_part });
 }
 
 pub fn buildBucketUrl(self: *S3Client, bucket: []const u8, query: ?[]const u8) ![]u8 {
@@ -41,13 +53,53 @@ pub fn buildBucketUrl(self: *S3Client, bucket: []const u8, query: ?[]const u8) !
     if (self.config.endpoint) |endpoint| {
         if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
             const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
-            return std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ clean_endpoint, bucket, query_part });
+            if (self.config.virtual_host_style) {
+                return std.fmt.allocPrint(self.allocator, "{s}{s}", .{ clean_endpoint, query_part });
+            } else {
+                return std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ clean_endpoint, bucket, query_part });
+            }
         } else {
-            return std.fmt.allocPrint(self.allocator, "https://{s}/{s}{s}", .{ endpoint, bucket, query_part });
+            if (self.config.virtual_host_style) {
+                return std.fmt.allocPrint(self.allocator, "https://{s}{s}", .{ endpoint, query_part });
+            } else {
+                return std.fmt.allocPrint(self.allocator, "https://{s}/{s}{s}", .{ endpoint, bucket, query_part });
+            }
         }
     }
     return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com{s}", .{ bucket, self.config.region, query_part });
 }
+
+// pub fn buildUrl(self: *S3Client, bucket: []const u8, key: []const u8) ![]u8 {
+//     const encoded_key = try internal.encodePath(self.allocator, key);
+//     defer self.allocator.free(encoded_key);
+//     if (self.config.endpoint) |endpoint| {
+//         // if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
+//         //     const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
+//         //     return std.fmt.allocPrint(self.allocator, "{s}/{s}/{s}", .{ clean_endpoint, bucket, encoded_key });
+//         // } else {
+//         const clean_endpoint = std.mem.trimStart(u8, endpoint, "https://");
+//         return std.fmt.allocPrint(self.allocator, "https://{s}.{s}/{s}", .{ bucket, clean_endpoint, encoded_key });
+//         // }
+//     }
+//     return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com/{s}", .{ bucket, self.config.region, encoded_key });
+// }
+
+// pub fn buildBucketUrl(self: *S3Client, bucket: []const u8, query: ?[]const u8) ![]u8 {
+//     const query_part = if (query) |q| try std.fmt.allocPrint(self.allocator, "?{s}", .{q}) else "";
+//     defer if (query != null) self.allocator.free(query_part);
+
+//     if (self.config.endpoint) |endpoint| {
+//         // if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
+//         //     const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
+//         //     return std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ clean_endpoint, bucket, query_part });
+//         // } else {
+//         //     return std.fmt.allocPrint(self.allocator, "https://{s}/{s}{s}", .{ endpoint, bucket, query_part });
+//         // }
+//         const clean_endpoint = std.mem.trimStart(u8, endpoint, "https://");
+//         return std.fmt.allocPrint(self.allocator, "https://{s}.{s}{s}", .{ bucket, clean_endpoint, query_part });
+//     }
+//     return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com{s}", .{ bucket, self.config.region, query_part });
+// }
 
 pub fn buildServiceUrl(self: *S3Client) ![]u8 {
     if (self.config.endpoint) |endpoint| {
@@ -62,7 +114,11 @@ pub fn buildServiceUrl(self: *S3Client) ![]u8 {
 
 pub fn getHost(self: *S3Client, bucket: []const u8) ![]u8 {
     if (self.config.endpoint) |endpoint| {
-        return self.allocator.dupe(u8, endpointHostSlice(endpoint));
+        if (self.config.virtual_host_style) {
+            return std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ bucket, endpointHostSlice(endpoint) });
+        } else {
+            return self.allocator.dupe(u8, endpointHostSlice(endpoint));
+        }
     }
     return std.fmt.allocPrint(self.allocator, "{s}.s3.{s}.amazonaws.com", .{ bucket, self.config.region });
 }

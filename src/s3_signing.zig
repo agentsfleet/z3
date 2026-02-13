@@ -28,11 +28,11 @@ pub fn signRequest(
     var uri_buf: [2048]u8 = undefined;
     const canonical_uri = if (bucket) |b|
         if (key) |k|
-            if (self.config.endpoint != null)
+            if (self.config.endpoint != null and !self.config.virtual_host_style)
                 std.fmt.bufPrint(&uri_buf, "/{s}/{s}", .{ b, encoded_key orelse k }) catch return error.RequestTooLong
             else
                 std.fmt.bufPrint(&uri_buf, "/{s}", .{encoded_key orelse k}) catch return error.RequestTooLong
-        else if (self.config.endpoint != null)
+        else if (self.config.endpoint != null and !self.config.virtual_host_style)
             std.fmt.bufPrint(&uri_buf, "/{s}", .{b}) catch return error.RequestTooLong
         else
             "/"

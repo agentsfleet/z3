@@ -15,6 +15,7 @@ pub const Config = struct {
     secret_access_key: []const u8,
     region: []const u8 = "us-east-1",
     endpoint: ?[]const u8 = null,
+    virtual_host_style: bool = false,
 };
 
 pub const InitOptions = struct {

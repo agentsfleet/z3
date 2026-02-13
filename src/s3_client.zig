@@ -142,6 +142,7 @@ pub const ObjectStream = struct {
 pub const init = ops.init;
 pub const deinit = ops.deinit;
 pub const getObject = ops.getObject;
+pub const getObjectStream = ops.getObjectStream;
 pub const getObjectStreamWithOptions = ops.getObjectStreamWithOptions;
 pub const getFile = ops.getFile;
 pub const getObjectWithOptions = ops.getObjectWithOptions;
@@ -161,7 +162,7 @@ pub const copyObject = ops.copyObject;
 pub const listBuckets = ops.listBuckets;
 
 pub const GetFileError =
-    @typeInfo(@typeInfo(@TypeOf(getObjectStreamWithOptions)).@"fn".return_type.?).error_union.error_set ||
+    @typeInfo(@typeInfo(@TypeOf(getObjectStream)).@"fn".return_type.?).error_union.error_set ||
     Error ||
     ObjectStream.Error ||
     std.Io.File.OpenError ||

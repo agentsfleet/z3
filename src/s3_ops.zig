@@ -41,6 +41,11 @@ pub fn getObject(self: *S3Client, bucket: []const u8, key: []const u8) S3Client.
 }
 
 /// GET object from S3 as a streaming response.
+pub fn getObjectStream(self: *S3Client, bucket: []const u8, key: []const u8) S3Client.RequestError!S3Client.ObjectStream {
+    return self.getObjectStreamWithOptions(bucket, key, .{});
+}
+
+/// GET object from S3 as a streaming response.
 pub fn getObjectStreamWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.GetObjectOptions) S3Client.RequestError!S3Client.ObjectStream {
     const req = try request.prepareRequest(self, .GET, bucket, key, .{ .range = options.range, .options = options.request });
     return request.executeRequestStream(self, req);

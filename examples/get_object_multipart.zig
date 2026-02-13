@@ -128,6 +128,15 @@ fn downloadAndWrite(io: Io, sema: *Io.Semaphore, file: *std.Io.File, client: *S3
     std.log.debug("{d}ms: Start download of range {d}-{d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), range.start, range.end });
     var resp = client.getObjectWithOptions(bucket, key, .{ .range = range }) catch return Io.Cancelable.Canceled;
     defer resp.deinit();
+    if (resp.status != .partial_content) {
+        std.log.err("Range {d}-{d} did not return 206, got {}", .{ range.start, range.end, resp.status });
+        return Io.Cancelable.Canceled;
+    }
+    const expected_len = range.end - range.start + 1;
+    if (resp.body.len != expected_len) {
+        std.log.err("Range {d}-{d} body size mismatch, expected {d}, got {d}", .{ range.start, range.end, expected_len, resp.body.len });
+        return Io.Cancelable.Canceled;
+    }
     file.writePositionalAll(io, resp.body, range.start) catch return Io.Cancelable.Canceled;
     std.log.debug("{d}ms: Successfully written range {d}-{d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), range.start, range.end });
 }

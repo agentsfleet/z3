@@ -174,6 +174,18 @@ pub fn putFile(
     return request.executeRequestWithReader(self, &req, &file_reader.interface);
 }
 
+/// Initiate a multipart upload
+pub fn createMultipartUpload(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) !void {
+    var req = try request.prepareRequest(self, .POST, bucket, key, .{ .options = options });
+    defer req.deinit();
+}
+
+/// Uploading a single part of an initialized multipart upload
+pub fn uploadPart() !void {}
+
+/// Complete a multipart upload after all parts have been uploaded
+pub fn completeMultipartUpload() !void {}
+
 /// DELETE object from S3
 pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
     var req = try request.prepareRequest(self, .DELETE, bucket, key, .{ .options = options });

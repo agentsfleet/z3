@@ -47,7 +47,7 @@ pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
 
     // Initialize async IO
-    var threaded: Io.Threaded = .init(gpa, .{ .environ = init.minimal.environ });
+    var threaded: std.Io.Threaded = .init(allocator, .{ .environ = init.minimal.environ });
     defer threaded.deinit();
     const io = threaded.io();
 
@@ -86,6 +86,7 @@ pub fn main(init: std.process.Init) !void {
 
 ### Object Operations
 - `getObject(bucket, key)`
+- `getObjectStream(bucket, key)`
 - `getObjectWithOptions(bucket, key, options)`
 - `getObjectStreamWithOptions(bucket, key, options)`
 - `getFile(bucket, key, dest_path, options)`
@@ -152,10 +153,16 @@ if (first.is_truncated and first.next_continuation_token != null) {
 
 ## Running Examples
 
-The repository includes an example in `src/main.zig`. You can run it with:
+The repository includes runnable examples in `examples/`:
+
+- `examples/put_fetch_async.zig`
+- `examples/get_object_multipart.zig`
+
+Run them with:
 
 ```bash
-zig build run
+zig build example-put-fetch-async
+zig build example-get-multipart
 ```
 
 ## License

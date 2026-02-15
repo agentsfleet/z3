@@ -36,17 +36,15 @@ pub fn deinit(self: *S3Client) void {
 }
 
 /// GET object from S3
-pub fn getObject(self: *S3Client, bucket: []const u8, key: []const u8) S3Client.RequestError!S3Client.Response {
-    return self.getObjectWithOptions(bucket, key, .{});
+pub fn getObject(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.GetObjectOptions) S3Client.RequestError!S3Client.Response {
+    var req = try request.prepareRequest(self, .GET, bucket, key, .{ .range = options.range, .options = options.request });
+    defer req.deinit();
+
+    return request.executeRequest(self, &req);
 }
 
 /// GET object from S3 as a streaming response.
-pub fn getObjectStream(self: *S3Client, bucket: []const u8, key: []const u8) S3Client.RequestError!S3Client.ObjectStream {
-    return self.getObjectStreamWithOptions(bucket, key, .{});
-}
-
-/// GET object from S3 as a streaming response.
-pub fn getObjectStreamWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.GetObjectOptions) S3Client.RequestError!S3Client.ObjectStream {
+pub fn getObjectStream(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.GetObjectOptions) S3Client.RequestError!S3Client.ObjectStream {
     const req = try request.prepareRequest(self, .GET, bucket, key, .{ .range = options.range, .options = options.request });
     return request.executeRequestStream(self, req);
 }
@@ -59,7 +57,7 @@ pub fn getFile(
     dest_path: []const u8,
     options: S3Client.GetFileOptions,
 ) S3Client.GetFileError!S3Client.GetFileResult {
-    var stream = try self.getObjectStreamWithOptions(bucket, key, .{});
+    var stream = try self.getObjectStream(bucket, key, .{});
     defer stream.deinit();
 
     if (stream.status() != .ok) {
@@ -110,16 +108,17 @@ pub fn getFile(
     };
 }
 
-pub fn getObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.GetObjectOptions) S3Client.RequestError!S3Client.Response {
-    var req = try request.prepareRequest(self, .GET, bucket, key, .{ .range = options.range, .options = options.request });
+/// PUT object to S3
+pub fn putObject(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8, options: S3Client.PutObjectOptions) S3Client.RequestError!S3Client.Response {
+    var req = try request.prepareRequest(self, .PUT, bucket, key, .{
+        .body = body,
+        .metadata = options.metadata,
+        .content_type = options.content_type,
+        .options = options.request,
+    });
     defer req.deinit();
 
     return request.executeRequest(self, &req);
-}
-
-/// PUT object to S3
-pub fn putObject(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8) S3Client.RequestError!S3Client.Response {
-    return self.putObjectWithOptions(bucket, key, body, .{});
 }
 
 /// PUT object from a file path to S3.
@@ -175,31 +174,8 @@ pub fn putFile(
     return request.executeRequestWithReader(self, &req, &file_reader.interface);
 }
 
-pub fn putObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
-    var req = try request.prepareRequest(self, .PUT, bucket, key, .{ .body = body, .options = options });
-    defer req.deinit();
-
-    return request.executeRequest(self, &req);
-}
-
-pub fn putObjectWithMetadata(self: *S3Client, bucket: []const u8, key: []const u8, body: []const u8, options: S3Client.PutObjectOptions) S3Client.RequestError!S3Client.Response {
-    var req = try request.prepareRequest(self, .PUT, bucket, key, .{
-        .body = body,
-        .metadata = options.metadata,
-        .content_type = options.content_type,
-        .options = options.request,
-    });
-    defer req.deinit();
-
-    return request.executeRequest(self, &req);
-}
-
 /// DELETE object from S3
-pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8) S3Client.RequestError!S3Client.Response {
-    return self.deleteObjectWithOptions(bucket, key, .{});
-}
-
-pub fn deleteObjectWithOptions(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
+pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
     var req = try request.prepareRequest(self, .DELETE, bucket, key, .{ .options = options });
     defer req.deinit();
 
@@ -221,11 +197,7 @@ pub const ListObjectsOptions = struct {
     max_keys: ?u32 = null,
 };
 
-pub fn listObjects(self: *S3Client, bucket: []const u8, prefix: ?[]const u8) S3Client.RequestError!types.ListObjectsResult {
-    return self.listObjectsWithOptions(bucket, .{ .prefix = prefix });
-}
-
-pub fn listObjectsWithOptions(self: *S3Client, bucket: []const u8, options: ListObjectsOptions) S3Client.RequestError!types.ListObjectsResult {
+pub fn listObjects(self: *S3Client, bucket: []const u8, options: ListObjectsOptions) S3Client.RequestError!types.ListObjectsResult {
     // Build query string with RFC3986 encoding for query values.
     const query = try buildListObjectsQuery(self, options);
     defer self.allocator.free(query);

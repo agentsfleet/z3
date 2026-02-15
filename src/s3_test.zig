@@ -74,7 +74,7 @@ test "02_putObject" {
     defer ctx.deinit();
     std.log.info("  calling putObject...", .{});
 
-    var response = try ctx.client.putObject(test_bucket, test_key, test_content);
+    var response = try ctx.client.putObject(test_bucket, test_key, test_content, .{});
     defer response.deinit();
     std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
 
@@ -88,13 +88,13 @@ test "02b_putObjectWithMetadata" {
 
     var ctx = try TestContext.init();
     defer ctx.deinit();
-    std.log.info("  calling putObjectWithMetadata...", .{});
+    std.log.info("  calling putObject with metadata...", .{});
 
     const metadata = [_]S3Client.Metadata{
         .{ .name = "color", .value = "blue" },
         .{ .name = "owner", .value = "zig-test" },
     };
-    var response = try ctx.client.putObjectWithMetadata(test_bucket, test_meta_key, test_meta_content, .{
+    var response = try ctx.client.putObject(test_bucket, test_meta_key, test_meta_content, .{
         .metadata = &metadata,
     });
     defer response.deinit();
@@ -201,7 +201,7 @@ test "04_listObjects" {
     defer ctx.deinit();
     std.log.info("  calling listObjects...", .{});
 
-    var result = try ctx.client.listObjects(test_bucket, null);
+    var result = try ctx.client.listObjects(test_bucket, .{});
     defer result.deinit();
     std.log.info("  Got {d} objects\n", .{result.objects.len});
 
@@ -223,28 +223,28 @@ test "04b_listObjectsPagination" {
 
     var ctx = try TestContext.init();
     defer ctx.deinit();
-    std.log.info("  calling listObjectsWithOptions...", .{});
+    std.log.info("  calling listObjects...", .{});
 
     const extra_key = "test-object-paginate-2.txt";
-    var response = try ctx.client.putObject(test_bucket, extra_key, test_content);
+    var response = try ctx.client.putObject(test_bucket, extra_key, test_content, .{});
     defer response.deinit();
     try std.testing.expect(response.status == .ok or response.status == .created);
 
-    var first = try ctx.client.listObjectsWithOptions(test_bucket, .{
+    var first = try ctx.client.listObjects(test_bucket, .{
         .max_keys = 1,
     });
     defer first.deinit();
     try std.testing.expect(first.is_truncated);
     try std.testing.expect(first.next_continuation_token != null);
 
-    var second = try ctx.client.listObjectsWithOptions(test_bucket, .{
+    var second = try ctx.client.listObjects(test_bucket, .{
         .max_keys = 1,
         .continuation_token = first.next_continuation_token.?,
     });
     defer second.deinit();
     try std.testing.expect(second.objects.len > 0);
 
-    var delete_extra = try ctx.client.deleteObject(test_bucket, extra_key);
+    var delete_extra = try ctx.client.deleteObject(test_bucket, extra_key, .{});
     defer delete_extra.deinit();
     try std.testing.expect(delete_extra.status == .no_content or delete_extra.status == .ok);
 
@@ -274,7 +274,7 @@ test "04c_concurrentPutGet" {
     const PutFuture = std.Io.Future(S3Client.RequestError!S3Client.Response);
     var put_futures: [keys.len]PutFuture = undefined;
     for (keys, 0..) |key, i| {
-        put_futures[i] = io.async(S3Client.putObject, .{ &ctx.client, test_bucket, key, body });
+        put_futures[i] = io.async(S3Client.putObject, .{ &ctx.client, test_bucket, key, body, .{} });
     }
     for (&put_futures) |*future| {
         var response = try future.await(io);
@@ -285,7 +285,7 @@ test "04c_concurrentPutGet" {
     const GetFuture = std.Io.Future(S3Client.RequestError!S3Client.Response);
     var get_futures: [keys.len]GetFuture = undefined;
     for (keys, 0..) |key, i| {
-        get_futures[i] = io.async(S3Client.getObject, .{ &ctx.client, test_bucket, key });
+        get_futures[i] = io.async(S3Client.getObject, .{ &ctx.client, test_bucket, key, .{} });
     }
     for (&get_futures) |*future| {
         var response = try future.await(io);
@@ -295,7 +295,7 @@ test "04c_concurrentPutGet" {
     }
 
     for (keys) |key| {
-        var delete_response = try ctx.client.deleteObject(test_bucket, key);
+        var delete_response = try ctx.client.deleteObject(test_bucket, key, .{});
         defer delete_response.deinit();
         try std.testing.expect(delete_response.status == .no_content or delete_response.status == .ok);
     }
@@ -311,7 +311,7 @@ test "05_getObject" {
     defer ctx.deinit();
     std.log.info("  calling getObject...", .{});
 
-    var response = try ctx.client.getObject(test_bucket, test_key);
+    var response = try ctx.client.getObject(test_bucket, test_key, .{});
     defer response.deinit();
     std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
 
@@ -328,7 +328,7 @@ test "06_getObjectStream" {
     defer ctx.deinit();
     std.log.info("  calling getObjectStream...", .{});
 
-    var stream = try ctx.client.getObjectStreamWithOptions(test_bucket, test_key, .{});
+    var stream = try ctx.client.getObjectStream(test_bucket, test_key, .{});
     defer stream.deinit();
 
     const reader = try stream.reader();
@@ -353,9 +353,9 @@ test "06b_getObjectRange" {
 
     var ctx = try TestContext.init();
     defer ctx.deinit();
-    std.log.info("  calling getObjectWithOptions...", .{});
+    std.log.info("  calling getObject...", .{});
 
-    var response = try ctx.client.getObjectWithOptions(test_bucket, test_key, .{ .range = .{ .start = 6, .end = 13 } });
+    var response = try ctx.client.getObject(test_bucket, test_key, .{ .range = .{ .start = 6, .end = 13 } });
     defer response.deinit();
     std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
 
@@ -372,13 +372,13 @@ test "07_deleteObject" {
     defer ctx.deinit();
     std.log.info("  calling deleteObject...", .{});
 
-    var response = try ctx.client.deleteObject(test_bucket, test_key);
+    var response = try ctx.client.deleteObject(test_bucket, test_key, .{});
     defer response.deinit();
     std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
     // 204 No Content is expected for successful delete
     try std.testing.expect(response.status == .no_content or response.status == .ok);
 
-    var meta_response = try ctx.client.deleteObject(test_bucket, test_meta_key);
+    var meta_response = try ctx.client.deleteObject(test_bucket, test_meta_key, .{});
     defer meta_response.deinit();
     std.log.info("  Got response: {} body_len={d}\n", .{ meta_response.status, meta_response.body.len });
     try std.testing.expect(meta_response.status == .no_content or meta_response.status == .ok);

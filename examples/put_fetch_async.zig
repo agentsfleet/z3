@@ -47,7 +47,7 @@ fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
     const PutFuture = Io.Future(S3Client.RequestError!S3Client.Response);
     var futures_a: [test_keys.len]PutFuture = undefined;
     for (test_keys, 0..) |key, i| {
-        futures_a[i] = io.async(S3Client.putObject, .{ &client, bucket, key, "THIS IS A TEST FILE" });
+        futures_a[i] = io.async(S3Client.putObject, .{ &client, bucket, key, "THIS IS A TEST FILE", .{} });
     }
 
     // Await results
@@ -62,7 +62,7 @@ fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
         }
     }
 
-    var list_res = try client.listObjects(bucket, "");
+    var list_res = try client.listObjects(bucket, .{ .prefix = "" });
     defer list_res.deinit();
     std.debug.print("Listing all the files!!\n", .{});
     for (list_res.objects) |obj| {
@@ -75,7 +75,7 @@ fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
     const GetFuture = Io.Future(S3Client.RequestError!S3Client.Response);
     var futures: [test_keys.len]GetFuture = undefined;
     for (test_keys, 0..) |key, i| {
-        futures[i] = io.async(S3Client.getObject, .{ &client, bucket, key });
+        futures[i] = io.async(S3Client.getObject, .{ &client, bucket, key, .{} });
     }
 
     // Await results

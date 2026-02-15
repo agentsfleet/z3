@@ -251,6 +251,58 @@ test "04b_listObjectsPagination" {
     std.log.info("=== DONE 04b_listObjectsPagination: {d} + {d} ===\n", .{ first.objects.len, second.objects.len });
 }
 
+// 4c. Concurrent put/get similar to examples/put_fetch_async.zig
+test "04c_concurrentPutGet" {
+    std.log.info("=== START 04c_concurrentPutGet ===", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+
+    var bucket_resp = try ctx.client.createBucket(test_bucket);
+    defer bucket_resp.deinit();
+    try std.testing.expect(bucket_resp.status == .ok or bucket_resp.status == .conflict);
+
+    const io = std.testing.io;
+    const keys = [_][]const u8{
+        "concurrent-0.txt",
+        "concurrent-1.txt",
+        "concurrent-2.txt",
+        "concurrent-3.txt",
+    };
+    const body = "THIS IS A CONCURRENT TEST FILE";
+
+    const PutFuture = std.Io.Future(S3Client.RequestError!S3Client.Response);
+    var put_futures: [keys.len]PutFuture = undefined;
+    for (keys, 0..) |key, i| {
+        put_futures[i] = io.async(S3Client.putObject, .{ &ctx.client, test_bucket, key, body });
+    }
+    for (&put_futures) |*future| {
+        var response = try future.await(io);
+        defer response.deinit();
+        try std.testing.expect(response.status == .ok or response.status == .created);
+    }
+
+    const GetFuture = std.Io.Future(S3Client.RequestError!S3Client.Response);
+    var get_futures: [keys.len]GetFuture = undefined;
+    for (keys, 0..) |key, i| {
+        get_futures[i] = io.async(S3Client.getObject, .{ &ctx.client, test_bucket, key });
+    }
+    for (&get_futures) |*future| {
+        var response = try future.await(io);
+        defer response.deinit();
+        try std.testing.expect(response.status == .ok);
+        try std.testing.expectEqualStrings(body, response.body);
+    }
+
+    for (keys) |key| {
+        var delete_response = try ctx.client.deleteObject(test_bucket, key);
+        defer delete_response.deinit();
+        try std.testing.expect(delete_response.status == .no_content or delete_response.status == .ok);
+    }
+
+    std.log.info("=== DONE 04c_concurrentPutGet ===", .{});
+}
+
 // 5. Get object
 test "05_getObject" {
     std.log.info("=== START 05_getObject ===", .{});

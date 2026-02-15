@@ -66,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
     var futures: [keys.len]Future = undefined;
 
     for (keys, 0..) |key, i| {
-        futures[i] = io.async(S3Client.getObject, .{ &client, "my-bucket", key });
+        futures[i] = io.async(S3Client.getObject, .{ &client, "my-bucket", key, .{} });
     }
 
     // Await results
@@ -85,19 +85,15 @@ pub fn main(init: std.process.Init) !void {
 ## Supported Operations
 
 ### Object Operations
-- `getObject(bucket, key)`
-- `getObjectStream(bucket, key)`
-- `getObjectWithOptions(bucket, key, options)`
-- `getObjectStreamWithOptions(bucket, key, options)`
+- `getObject(bucket, key, options)`
+- `getObjectStream(bucket, key, options)`
 - `getFile(bucket, key, dest_path, options)`
-- `putObject(bucket, key, body)`
-- `putObjectWithMetadata(bucket, key, body, options)`
+- `putObject(bucket, key, body, options)`
 - `putFile(bucket, key, src_path, options)`
-- `deleteObject(bucket, key)`
+- `deleteObject(bucket, key, options)`
 - `headObject(bucket, key)`
 - `copyObject(src_bucket, src_key, dst_bucket, dst_key)`
-- `listObjects(bucket, prefix)`
-- `listObjectsWithOptions(bucket, options)`
+- `listObjects(bucket, options)`
 
 ### Bucket Operations
 - `listBuckets()`
@@ -114,7 +110,7 @@ const metadata = [_]S3Client.Metadata{
     .{ .name = "owner", .value = "zig-test" },
 };
 
-var response = try client.putObjectWithMetadata("my-bucket", "meta.txt", "hello", .{
+var response = try client.putObject("my-bucket", "meta.txt", "hello", .{
     .metadata = &metadata,
 });
 defer response.deinit();
@@ -124,16 +120,16 @@ Metadata is also supported on `putFile` via `PutFileOptions.metadata`.
 
 ## ListObjects Pagination
 
-Use `listObjectsWithOptions` with continuation tokens:
+Use `listObjects` with continuation tokens:
 
 ```zig
-var first = try client.listObjectsWithOptions("my-bucket", .{
+var first = try client.listObjects("my-bucket", .{
     .max_keys = 100,
 });
 defer first.deinit();
 
 if (first.is_truncated and first.next_continuation_token != null) {
-    var next = try client.listObjectsWithOptions("my-bucket", .{
+    var next = try client.listObjects("my-bucket", .{
         .continuation_token = first.next_continuation_token.?,
         .max_keys = 100,
     });

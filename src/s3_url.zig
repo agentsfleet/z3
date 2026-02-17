@@ -25,47 +25,32 @@ fn endpointHostSlice(endpoint: []const u8) struct { scheme: ?[]const u8, host: [
     return .{ .scheme = scheme, .host = host };
 }
 
-/// Build a request URL for object scale operations.
+/// Build a request URL for a S3 API request call.
 ///
 /// This combines scheme, endpoint, bucket, key and query string into the
 /// correct URL to be processed by a S3 request depending on the used request style.
-pub fn buildUrl(self: *S3Client, bucket: []const u8, key: []const u8, query: ?[]const u8) ![]u8 {
+pub fn buildUrl(self: *S3Client, bucket: []const u8, key: ?[]const u8, query: ?[]const u8) ![]u8 {
     const query_part = if (query) |q| try std.fmt.allocPrint(self.allocator, "?{s}", .{q}) else "";
     defer if (query != null) self.allocator.free(query_part);
 
-    const encoded_key = try internal.encodePath(self.allocator, key);
-    defer self.allocator.free(encoded_key);
+    const encoded_key = if (key) |k| blk: {
+        const encoded_k = try internal.encodePath(self.allocator, k);
+        const fmt_k = try std.fmt.allocPrint(self.allocator, "/{s}", .{encoded_k});
+        defer self.allocator.free(encoded_k);
+        break :blk fmt_k;
+    } else "";
+    defer if (key != null) self.allocator.free(encoded_key);
 
     if (self.config.endpoint) |endpoint| {
         const clean_endpoint = endpointHostSlice(endpoint);
 
         if (self.config.virtual_host_style) {
-            return std.fmt.allocPrint(self.allocator, "{s}{s}.{s}/{s}{s}", .{ clean_endpoint.scheme orelse "https://", bucket, clean_endpoint.host, encoded_key, query_part });
+            return std.fmt.allocPrint(self.allocator, "{s}{s}.{s}{s}{s}", .{ clean_endpoint.scheme orelse "https://", bucket, clean_endpoint.host, encoded_key, query_part });
         } else {
-            return std.fmt.allocPrint(self.allocator, "{s}{s}/{s}/{s}{s}", .{ clean_endpoint.scheme orelse "https://", clean_endpoint.host, bucket, encoded_key, query_part });
+            return std.fmt.allocPrint(self.allocator, "{s}{s}/{s}{s}{s}", .{ clean_endpoint.scheme orelse "https://", clean_endpoint.host, bucket, encoded_key, query_part });
         }
     }
-    return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com/{s}{s}", .{ bucket, self.config.region, encoded_key, query_part });
-}
-
-/// Build a request URL for bucket scale operations.
-///
-/// This combines scheme, endpoint, bucket and query string into the
-/// correct URL to be processed by a S3 request depending on the used request style.
-pub fn buildBucketUrl(self: *S3Client, bucket: []const u8, query: ?[]const u8) ![]u8 {
-    const query_part = if (query) |q| try std.fmt.allocPrint(self.allocator, "?{s}", .{q}) else "";
-    defer if (query != null) self.allocator.free(query_part);
-
-    if (self.config.endpoint) |endpoint| {
-        const clean_endpoint = endpointHostSlice(endpoint);
-
-        if (self.config.virtual_host_style) {
-            return std.fmt.allocPrint(self.allocator, "{s}{s}.{s}{s}", .{ clean_endpoint.scheme orelse "https://", bucket, clean_endpoint.host, query_part });
-        } else {
-            return std.fmt.allocPrint(self.allocator, "{s}{s}/{s}{s}", .{ clean_endpoint.scheme orelse "https://", clean_endpoint.host, bucket, query_part });
-        }
-    }
-    return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com{s}", .{ bucket, self.config.region, query_part });
+    return std.fmt.allocPrint(self.allocator, "https://{s}.s3.{s}.amazonaws.com{s}{s}", .{ bucket, self.config.region, encoded_key, query_part });
 }
 
 pub fn buildServiceUrl(self: *S3Client) ![]u8 {

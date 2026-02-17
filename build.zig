@@ -20,7 +20,6 @@ pub fn build(b: *std.Build) void {
 
     const examples = .{
         .{ "example-get-multipart", "examples/get_object_multipart.zig" },
-        .{ "example-test", "examples/tester.zig" },
         .{ "example-put-fetch-async", "examples/put_fetch_async.zig" },
     };
 

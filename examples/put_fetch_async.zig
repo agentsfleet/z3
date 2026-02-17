@@ -37,6 +37,7 @@ fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
         .secret_access_key = secret_key,
         .region = region,
         .endpoint = endpoint,
+        .virtual_host_style = false,
     }, .{ .io = io });
     defer client.deinit();
 

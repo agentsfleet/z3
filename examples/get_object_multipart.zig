@@ -39,6 +39,7 @@ pub fn main(init: std.process.Init) !void {
         .secret_access_key = secret_key,
         .region = region,
         .endpoint = endpoint,
+        .virtual_host_style = false,
     }, .{ .io = io });
     defer client.deinit();
 

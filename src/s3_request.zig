@@ -27,10 +27,7 @@ pub fn prepareRequest(
     params: RequestParams,
 ) !request_types.UnifiedRequest {
     const url_str = if (bucket) |b|
-        if (key) |k|
-            try url.buildUrl(self, b, k, params.query)
-        else
-            try url.buildBucketUrl(self, b, params.query)
+        try url.buildUrl(self, b, key, params.query)
     else
         try url.buildServiceUrl(self);
     errdefer self.allocator.free(url_str);

@@ -12,6 +12,7 @@
 - **Comprehensive API**: Supports GET, PUT, DELETE, HEAD, Copy, Bucket management, and file-based uploads/downloads.
 - **Streaming**: Includes streaming APIs for object downloads and direct-to-file transfers.
 - **XML Parsing**: Built-in support for parsing S3 XML responses for object listings and error handling.
+- **Virtual-Host-Style Requests** Supports both: legacy path-style requests, as well as virtual-host-style requests.
 
 ## Prerequisites
 
@@ -57,6 +58,7 @@ pub fn main(init: std.process.Init) !void {
         .secret_access_key = "YOUR_SECRET_KEY",
         .region = "auto",
         .endpoint = "https://<accountid>.r2.cloudflarestorage.com",
+        .virtual_host_style = false, // default
     }, .{.io = io });
     defer client.deinit();
 

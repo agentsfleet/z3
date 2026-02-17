@@ -15,6 +15,11 @@ pub const Config = struct {
     secret_access_key: []const u8,
     region: []const u8 = "us-east-1",
     endpoint: ?[]const u8 = null,
+    /// Set S3 request style to virtual host style. Otherwise, use the legacy
+    /// path style request.
+    ///
+    /// See https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html
+    /// for more information.
     virtual_host_style: bool = false,
 };
 

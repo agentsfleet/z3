@@ -28,18 +28,22 @@ pub fn buildUrl(self: *S3Client, bucket: []const u8, key: []const u8, query: ?[]
     defer self.allocator.free(encoded_key);
 
     if (self.config.endpoint) |endpoint| {
-        const buf: [1024]u8 = undefined;
+        // const buf: [1024]u8 = undefined;
 
         if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
-            const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
-            const path = if (self.config.virtual_host_style) try std.fmt.bufPrint(buf, "{s}", .{encoded_key}) else try std.fmt.bufPrint(buf, "{s}/{s}", .{ bucket, encoded_key });
+            const clean_endpoint = endpointHostSlice(endpoint);
+            // const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
+            // const path = if (self.config.virtual_host_style) try std.fmt.allocPrint(self.allocator, "{s}", .{encoded_key}) else try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ bucket, encoded_key });
+            // defer self.allocator.free(path);
 
-            const url = try std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ clean_endpoint, path, query_part });
+            const url = if (self.config.virtual_host_style) try std.fmt.allocPrint(self.allocator, "https://{s}.{s}/{s}{s}", .{ bucket, clean_endpoint, encoded_key, query_part }) else try std.fmt.allocPrint(self.allocator, "{s}/{s}/{s}{s}", .{ clean_endpoint, bucket, encoded_key, query_part });
+
+            std.log.debug("URL: {s}", .{url});
             return url;
         } else {
-            const path = if (self.config.virtual_host_style) try std.fmt.bufPrint(buf, "{s}", .{encoded_key}) else try std.fmt.bufPrint(buf, "{s}/{s}", .{ bucket, encoded_key });
+            const url = if (self.config.virtual_host_style) try std.fmt.allocPrint(self.allocator, "https://{s}.{s}/{s}{s}", .{ bucket, endpoint, encoded_key, query_part }) else try std.fmt.allocPrint(self.allocator, "https://{s}/{s}/{s}{s}", .{ endpoint, bucket, encoded_key, query_part });
 
-            const url = try std.fmt.allocPrint(self.allocator, "https://{s}/{s}{s}", .{ endpoint, path, query_part });
+            std.log.debug("URL: {s}", .{url});
             return url;
         }
     }
@@ -52,15 +56,15 @@ pub fn buildBucketUrl(self: *S3Client, bucket: []const u8, query: ?[]const u8) !
 
     if (self.config.endpoint) |endpoint| {
         if (std.mem.startsWith(u8, endpoint, "https://") or std.mem.startsWith(u8, endpoint, "http://")) {
-            const clean_endpoint = std.mem.trimEnd(u8, endpoint, "/");
+            const clean_endpoint = endpointHostSlice(endpoint);
             if (self.config.virtual_host_style) {
-                return std.fmt.allocPrint(self.allocator, "{s}{s}", .{ clean_endpoint, query_part });
+                return std.fmt.allocPrint(self.allocator, "https://{s}.{s}{s}", .{ bucket, clean_endpoint, query_part });
             } else {
-                return std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ clean_endpoint, bucket, query_part });
+                return std.fmt.allocPrint(self.allocator, "https://{s}/{s}{s}", .{ clean_endpoint, bucket, query_part });
             }
         } else {
             if (self.config.virtual_host_style) {
-                return std.fmt.allocPrint(self.allocator, "https://{s}{s}", .{ endpoint, query_part });
+                return std.fmt.allocPrint(self.allocator, "https://{s}.{s}{s}", .{ bucket, endpoint, query_part });
             } else {
                 return std.fmt.allocPrint(self.allocator, "https://{s}/{s}{s}", .{ endpoint, bucket, query_part });
             }

@@ -81,6 +81,11 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // TODO: CreateMultipartUpload here
+    var create_response = try client.createMultipartUpload(bucket, key, .{});
+    defer create_response.deinit();
+
+    // Save upload ID to constant
+    const upload_id = create_response.upload_id;
 
     // Set a value for max parallel downloads
     const max_concurrency_count = 3;
@@ -95,21 +100,19 @@ pub fn main(init: std.process.Init) !void {
     // Create a timestamp just for making timeintervals visible
     const start_t = std.Io.Timestamp.now(io, .awake);
     std.log.info("Starting download process", .{});
-
-    for (ranges.items) |r| {
-        futures.async(io, downloadAndWrite, .{ io, &semaphore, &local_file, &client, bucket, key, r, start_t });
-    }
-
-    // Await the download part functions
-    try futures.await(io);
-
-    // TODO: CompleteMulitpartPart here
-
-    std.log.info("File successfully downloaded with multipart", .{});
 }
 
 // helper function for downloading parts and interacting with the semaphore
-fn downloadAndWrite(io: Io, sema: *Io.Semaphore, file: *std.Io.File, client: *S3Client, bucket: []const u8, key: []const u8, range: S3Client.ContentRange, start_t: Io.Timestamp) !void {
+fn downloadAndWrite(
+    io: Io,
+    sema: *Io.Semaphore,
+    file: *std.Io.File,
+    client: *S3Client,
+    bucket: []const u8,
+    key: []const u8,
+    range: S3Client.ContentRange,
+    start_t: Io.Timestamp,
+) !void {
     // We need to always return `Io.Cancelable.Canceled`. Otherwise `Group`
     // processing wont work.
     sema.wait(io) catch return Io.Cancelable.Canceled;

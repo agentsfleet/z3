@@ -9,7 +9,7 @@ const testing = std.testing;
 fn extractTag(content: []const u8, tag: []const u8) ?[]const u8 {
     var buf: [128]u8 = undefined;
     const s_start = std.fmt.bufPrint(&buf, "<{s}", .{tag}) catch return null;
-    
+
     const s_idx = std.mem.indexOf(u8, content, s_start) orelse return null;
     // Ensure we matched the full tag name and not a prefix (e.g. <Key matched in <KeyCount>)
     if (s_idx + s_start.len < content.len) {
@@ -21,7 +21,7 @@ fn extractTag(content: []const u8, tag: []const u8) ?[]const u8 {
     }
 
     const open_tag_end = std.mem.indexOfPos(u8, content, s_idx, ">") orelse return null;
-    
+
     const e_tag = std.fmt.bufPrint(&buf, "</{s}>", .{tag}) catch return null;
     const e_idx = std.mem.indexOfPos(u8, content, open_tag_end, e_tag) orelse return null;
 
@@ -73,13 +73,13 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
 
         const key = try extractTagDupe(allocator, chunk, "Key");
         errdefer allocator.free(key);
-        
+
         const last_modified = try extractTagDupe(allocator, chunk, "LastModified");
         errdefer allocator.free(last_modified);
-        
+
         const etag = try extractTagDupe(allocator, chunk, "ETag");
         errdefer allocator.free(etag);
-        
+
         var size: u64 = 0;
         if (extractTag(chunk, "Size")) |size_str| {
             size = std.fmt.parseInt(u64, size_str, 10) catch 0;
@@ -126,7 +126,7 @@ pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucke
 
         const name = try extractTagDupe(allocator, chunk, "Name");
         errdefer allocator.free(name);
-        
+
         const date = try extractTagDupe(allocator, chunk, "CreationDate");
         errdefer allocator.free(date);
 
@@ -141,6 +141,15 @@ pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucke
         .buckets = try buckets.toOwnedSlice(allocator),
         .owner_id = try extractTagOptionalDupe(allocator, body, "ID"),
         .owner_display_name = try extractTagOptionalDupe(allocator, body, "DisplayName"),
+        .allocator = allocator,
+    };
+}
+
+pub fn parseCreateMultipartUpload(allocator: Allocator, body: []const u8) !types.CreateMultipartUploadResult {
+    return .{
+        .bucket = extractTagDupe(allocator, body, "Bucket"),
+        .key = extractTagDupe(allocator, body, "Key"),
+        .upload_id = extractTagDupe(allocator, body, "UploadId"),
         .allocator = allocator,
     };
 }
@@ -168,6 +177,22 @@ test "parseListBuckets" {
     defer result.deinit();
     try testing.expectEqual(result.buckets.len, 2);
     try testing.expectEqualStrings(result.buckets[0].name, "bucket-1");
+}
+
+test "parseCreateMultipartUpload" {
+    const xml_data =
+        \\<?xml version="1.0" encoding="UTF-8"?>
+        \\<InitiateMultipartUploadResult>
+        \\   <Bucket>my_bucket</Bucket>
+        \\   <Key>object_key</Key>
+        \\   <UploadId>VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA</UploadId>
+        \\</InitiateMultipartUploadResult>
+    ;
+    var result = try parseCreateMultipartUpload(testing.allocator, xml_data);
+    defer result.deinit();
+    try testing.expectEqualStrings(result.bucket, "my_bucket");
+    try testing.expectEqualStrings(result.key, "object_key");
+    try testing.expectEqualStrings(result.upload_id, "VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA");
 }
 
 test "parseS3Error" {

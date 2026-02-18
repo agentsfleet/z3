@@ -43,6 +43,18 @@ pub const PutObjectOptions = struct {
     content_type: ?[]const u8 = null,
 };
 
+pub const CreateMultipartUploadOptions = struct {
+    request: RequestOptions = .{},
+    metadata: ?[]const Metadata = null,
+    content_type: ?[]const u8 = null,
+};
+
+pub const UploadPartOptions = struct {
+    request: RequestOptions = .{},
+    upload_id: []const u8,
+    part: u32,
+};
+
 /// Options that can be passed to a `Get-Object` request.
 pub const GetObjectOptions = struct {
     request: RequestOptions = .{},
@@ -233,6 +245,7 @@ pub const createBucket = ops.createBucket;
 pub const deleteBucket = ops.deleteBucket;
 pub const copyObject = ops.copyObject;
 pub const listBuckets = ops.listBuckets;
+pub const createMultipartUpload = ops.createMultipartUpload;
 
 pub const GetFileError =
     @typeInfo(@typeInfo(@TypeOf(getObjectStream)).@"fn".return_type.?).error_union.error_set ||

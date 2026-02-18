@@ -175,13 +175,44 @@ pub fn putFile(
 }
 
 /// Initiate a multipart upload
-pub fn createMultipartUpload(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) !void {
-    var req = try request.prepareRequest(self, .POST, bucket, key, .{ .options = options });
+pub fn createMultipartUpload(
+    self: *S3Client,
+    bucket: []const u8,
+    key: []const u8,
+    options: S3Client.CreateMultipartUploadOptions,
+) S3Client.RequestError!types.CreateMultipartUploadResult {
+    var req = try request.prepareRequest(self, .POST, bucket, key, .{
+        .query = "uploads",
+        .options = options.request,
+        .metadata = options.metadata,
+        .content_type = options.content_type,
+    });
     defer req.deinit();
+
+    var response = try request.executeRequest(self, &req);
+    defer response.deinit();
+
+    return xml.parseCreateMultipartUpload(self.allocator, response.body);
 }
 
 /// Uploading a single part of an initialized multipart upload
-pub fn uploadPart() !void {}
+pub fn uploadPart(
+    self: *S3Client,
+    bucket: []const u8,
+    key: []const u8,
+    upload_id: []const u8,
+    part_count: u32,
+    options: S3Client.RequestOptions,
+) S3Client.RequestError!S3Client.Response {
+    const query_string = try std.fmt.allocPrint(self.allocator, "partNumber={d}&uploadId={s}", .{ part_count, upload_id });
+    defer self.allocator.free(query_string);
+
+    var req = try request.prepareRequest(self, .PUT, bucket, key, .{
+        .query = query_string,
+        .options = options,
+    });
+    defer req.deinit();
+}
 
 /// Complete a multipart upload after all parts have been uploaded
 pub fn completeMultipartUpload() !void {}

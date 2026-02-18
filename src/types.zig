@@ -72,6 +72,19 @@ pub const ListBucketsResult = struct {
     }
 };
 
+pub const CreateMultipartUploadResult = struct {
+    bucket: []const u8,
+    key: []const u8,
+    upload_id: []const u8,
+    allocator: Allocator,
+
+    pub fn deinit(self: *CreateMultipartUploadResult) void {
+        self.allocator.free(self.bucket);
+        self.allocator.free(self.key);
+        self.allocator.free(self.upload_id);
+    }
+};
+
 /// S3 error parsed from XML response
 pub const S3Error = struct {
     code: []const u8,

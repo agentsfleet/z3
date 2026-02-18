@@ -96,9 +96,32 @@ test "buildUrl percent-encodes object keys" {
         },
     };
 
-    const url_value = try buildUrl(&client, "my-bucket", "path with space?.txt");
+    const url_value = try buildUrl(&client, "my-bucket", "path with space?.txt", null);
     defer std.testing.allocator.free(url_value);
     try std.testing.expectEqualStrings("https://example.com/my-bucket/path%20with%20space%3F.txt", url_value);
+}
+
+test "buildUrl and getHost use virtual-host-style when enabled" {
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+            .virtual_host_style = true,
+        },
+    };
+
+    const url_value = try buildUrl(&client, "my-bucket", "path with space?.txt", "x=1");
+    defer std.testing.allocator.free(url_value);
+    try std.testing.expectEqualStrings("https://my-bucket.example.com/path%20with%20space%3F.txt?x=1", url_value);
+
+    const host = try getHost(&client, "my-bucket");
+    defer std.testing.allocator.free(host);
+    try std.testing.expectEqualStrings("my-bucket.example.com", host);
 }
 
 test "getHost strips endpoint path/query and userinfo" {

@@ -193,10 +193,18 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         break :blk reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
     };
 
+    var head_iter = response.head.iterateHeaders();
+
+    // return S3Client.Response{
+    //     .status = response.head.status,
+    //     .body = response_body,
+    //     .allocator = self.allocator,
+    // };
     return S3Client.Response{
-        .status = response.head.status,
+        .http_head = response.head,
         .body = response_body,
         .allocator = self.allocator,
+        .s3_head = .parse(self.allocator, &head_iter),
     };
 }
 

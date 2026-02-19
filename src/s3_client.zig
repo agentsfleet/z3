@@ -77,7 +77,10 @@ pub const PutFileOptions = struct {
 };
 
 pub const Response = struct {
-    status: http.Status,
+    /// Standard http header parsed by the `std.http.Client.receiveHead()` function
+    http_head: http.Client.Response.Head,
+    /// S3/Aws specific header
+    s3_head: S3Header,
     body: []u8,
     allocator: Allocator,
 
@@ -87,6 +90,17 @@ pub const Response = struct {
         }
     }
 };
+// pub const Response = struct {
+//     status: http.Status,
+//     body: []u8,
+//     allocator: Allocator,
+
+//     pub fn deinit(self: *Response) void {
+//         if (self.body.len > 0) {
+//             self.allocator.free(self.body);
+//         }
+//     }
+// };
 
 pub const Error = error{
     RequestFailed,
@@ -142,6 +156,44 @@ pub const ObjectStream = struct {
         self.request.deinit();
         self.allocator.destroy(self.request);
         self.request_data.deinit();
+    }
+};
+
+/// Struct holding S3/AWS specific header
+pub const S3Header = struct {
+    etag: ?[]const u8 = null,
+    last_modified: ?[]const u8 = null,
+    x_amz_header: std.hash_map.StringHashMap([]const u8),
+    allocator: Allocator,
+
+    pub fn parse(allocator: Allocator, head_iter: http.HeaderIterator) !S3Header {
+        var s3_head: S3Header = .{
+            .allocator = allocator,
+            .x_amz_header = .init(allocator),
+        };
+
+        while (head_iter.next()) |header| {
+            if (std.ascii.startsWithIgnoreCase(header.name, "x-amz")) {
+                s3_head.x_amz_header.put(header.name, header.value);
+            } else if (std.ascii.eqlIgnoreCase(header.name, "etag")) {
+                s3_head.etag = header.value;
+            } else if (std.ascii.eqlIgnoreCase(header.name, "last-modified")) {
+                s3_head.last_modified = header.value;
+            }
+        }
+
+        return s3_head;
+    }
+
+    pub fn deinit(self: *S3Header) !void {
+        if (self.x_amz_header.count() > 0) {
+            var iter = self.x_amz_header.iterator();
+            while (iter.next()) |e| {
+                self.allocator.free(e.key_ptr.*);
+                self.allocator.free(e.value_ptr.*);
+            }
+            self.x_amz_header.deinit();
+        }
     }
 };
 

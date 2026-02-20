@@ -208,7 +208,7 @@ pub fn listObjects(self: *S3Client, bucket: []const u8, options: ListObjectsOpti
     var response = try request.executeRequest(self, &req);
     defer response.deinit();
 
-    if (response.status != .ok) {
+    if (response.http_head.status != .ok) {
         var s3_err = xml.parseS3Error(self.allocator, response.body) catch |err| {
             std.log.err("failed to parse s3 error: {s}", .{@errorName(err)});
             return error.RequestFailed;
@@ -255,7 +255,7 @@ pub fn listBuckets(self: *S3Client) S3Client.RequestError!types.ListBucketsResul
     var response = try request.executeRequest(self, &req);
     defer response.deinit();
 
-    if (response.status != .ok) {
+    if (response.http_head.status != .ok) {
         var s3_err = xml.parseS3Error(self.allocator, response.body) catch |err| {
             std.log.err("failed to parse s3 error: {s}", .{@errorName(err)});
             return error.RequestFailed;

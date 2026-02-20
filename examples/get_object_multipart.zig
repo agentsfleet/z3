@@ -129,8 +129,8 @@ fn downloadAndWrite(io: Io, sema: *Io.Semaphore, file: *std.Io.File, client: *S3
     std.log.debug("{d}ms: Start download of range {d}-{d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), range.start, range.end });
     var resp = client.getObject(bucket, key, .{ .range = range }) catch return Io.Cancelable.Canceled;
     defer resp.deinit();
-    if (resp.status != .partial_content) {
-        std.log.err("Range {d}-{d} did not return 206, got {}", .{ range.start, range.end, resp.status });
+    if (resp.http_head.status != .partial_content) {
+        std.log.err("Range {d}-{d} did not return 206, got {}", .{ range.start, range.end, resp.http_head.status });
         return Io.Cancelable.Canceled;
     }
     const expected_len = range.end - range.start + 1;

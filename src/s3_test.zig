@@ -59,11 +59,11 @@ test "01_createBucket" {
 
     var response = try ctx.client.createBucket(test_bucket);
     defer response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
 
     // 200 OK or 409 Conflict (already exists) are acceptable
-    try std.testing.expect(response.status == .ok or response.status == .conflict);
-    std.log.info("=== DONE 01_createBucket: {} ===\n", .{response.status});
+    try std.testing.expect(response.http_head.status == .ok or response.http_head.status == .conflict);
+    std.log.info("=== DONE 01_createBucket: {} ===\n", .{response.http_head.status});
 }
 
 // 2. Put object
@@ -76,10 +76,10 @@ test "02_putObject" {
 
     var response = try ctx.client.putObject(test_bucket, test_key, test_content, .{});
     defer response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
 
-    try std.testing.expect(response.status == .ok or response.status == .created);
-    std.log.info("=== DONE 02_putObject: {} ===\n", .{response.status});
+    try std.testing.expect(response.http_head.status == .ok or response.http_head.status == .created);
+    std.log.info("=== DONE 02_putObject: {} ===\n", .{response.http_head.status});
 }
 
 // 2b. Put object with metadata
@@ -98,10 +98,10 @@ test "02b_putObjectWithMetadata" {
         .metadata = &metadata,
     });
     defer response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
 
-    try std.testing.expect(response.status == .ok or response.status == .created);
-    std.log.info("=== DONE 02b_putObjectWithMetadata: {} ===\n", .{response.status});
+    try std.testing.expect(response.http_head.status == .ok or response.http_head.status == .created);
+    std.log.info("=== DONE 02b_putObjectWithMetadata: {} ===\n", .{response.http_head.status});
 }
 
 // 2b. Put object (file)
@@ -128,10 +128,10 @@ test "02c_putFile" {
     std.log.info("  calling putFile...", .{});
     var response = try ctx.client.putFile(test_bucket, test_key, rel_path, .{});
     defer response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
 
-    try std.testing.expect(response.status == .ok or response.status == .created);
-    std.log.info("=== DONE 02c_putFile: {} ===\n", .{response.status});
+    try std.testing.expect(response.http_head.status == .ok or response.http_head.status == .created);
+    std.log.info("=== DONE 02c_putFile: {} ===\n", .{response.http_head.status});
 }
 
 // 2c. Get object (file)
@@ -228,7 +228,7 @@ test "04b_listObjectsPagination" {
     const extra_key = "test-object-paginate-2.txt";
     var response = try ctx.client.putObject(test_bucket, extra_key, test_content, .{});
     defer response.deinit();
-    try std.testing.expect(response.status == .ok or response.status == .created);
+    try std.testing.expect(response.http_head.status == .ok or response.http_head.status == .created);
 
     var first = try ctx.client.listObjects(test_bucket, .{
         .max_keys = 1,
@@ -246,7 +246,7 @@ test "04b_listObjectsPagination" {
 
     var delete_extra = try ctx.client.deleteObject(test_bucket, extra_key, .{});
     defer delete_extra.deinit();
-    try std.testing.expect(delete_extra.status == .no_content or delete_extra.status == .ok);
+    try std.testing.expect(delete_extra.http_head.status == .no_content or delete_extra.http_head.status == .ok);
 
     std.log.info("=== DONE 04b_listObjectsPagination: {d} + {d} ===\n", .{ first.objects.len, second.objects.len });
 }
@@ -260,7 +260,7 @@ test "04c_concurrentPutGet" {
 
     var bucket_resp = try ctx.client.createBucket(test_bucket);
     defer bucket_resp.deinit();
-    try std.testing.expect(bucket_resp.status == .ok or bucket_resp.status == .conflict);
+    try std.testing.expect(bucket_resp.http_head.status == .ok or bucket_resp.http_head.status == .conflict);
 
     const io = std.testing.io;
     const keys = [_][]const u8{
@@ -279,7 +279,7 @@ test "04c_concurrentPutGet" {
     for (&put_futures) |*future| {
         var response = try future.await(io);
         defer response.deinit();
-        try std.testing.expect(response.status == .ok or response.status == .created);
+        try std.testing.expect(response.http_head.status == .ok or response.http_head.status == .created);
     }
 
     const GetFuture = std.Io.Future(S3Client.RequestError!S3Client.Response);
@@ -290,14 +290,14 @@ test "04c_concurrentPutGet" {
     for (&get_futures) |*future| {
         var response = try future.await(io);
         defer response.deinit();
-        try std.testing.expect(response.status == .ok);
+        try std.testing.expect(response.http_head.status == .ok);
         try std.testing.expectEqualStrings(body, response.body);
     }
 
     for (keys) |key| {
         var delete_response = try ctx.client.deleteObject(test_bucket, key, .{});
         defer delete_response.deinit();
-        try std.testing.expect(delete_response.status == .no_content or delete_response.status == .ok);
+        try std.testing.expect(delete_response.http_head.status == .no_content or delete_response.http_head.status == .ok);
     }
 
     std.log.info("=== DONE 04c_concurrentPutGet ===", .{});
@@ -313,11 +313,11 @@ test "05_getObject" {
 
     var response = try ctx.client.getObject(test_bucket, test_key, .{});
     defer response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
 
-    try std.testing.expect(response.status == .ok);
+    try std.testing.expect(response.http_head.status == .ok);
     try std.testing.expectEqualStrings(test_content, response.body);
-    std.log.info("=== DONE 05_getObject: {} - \"{s}\" ===\n", .{ response.status, response.body });
+    std.log.info("=== DONE 05_getObject: {} - \"{s}\" ===\n", .{ response.http_head.status, response.body });
 }
 
 // 6. Get object (streaming)
@@ -357,11 +357,11 @@ test "06b_getObjectRange" {
 
     var response = try ctx.client.getObject(test_bucket, test_key, .{ .range = .{ .start = 6, .end = 13 } });
     defer response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
 
-    try std.testing.expect(response.status == .partial_content);
+    try std.testing.expect(response.http_head.status == .partial_content);
     try std.testing.expectEqualStrings(test_content[6..14], response.body);
-    std.log.info("=== DONE 06b_getObjectRange: {} - \"{s}\" ===\n", .{ response.status, response.body });
+    std.log.info("=== DONE 06b_getObjectRange: {} - \"{s}\" ===\n", .{ response.http_head.status, response.body });
 }
 
 // 7. Delete object
@@ -374,16 +374,16 @@ test "07_deleteObject" {
 
     var response = try ctx.client.deleteObject(test_bucket, test_key, .{});
     defer response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
     // 204 No Content is expected for successful delete
-    try std.testing.expect(response.status == .no_content or response.status == .ok);
+    try std.testing.expect(response.http_head.status == .no_content or response.http_head.status == .ok);
 
     var meta_response = try ctx.client.deleteObject(test_bucket, test_meta_key, .{});
     defer meta_response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ meta_response.status, meta_response.body.len });
-    try std.testing.expect(meta_response.status == .no_content or meta_response.status == .ok);
+    std.log.info("  Got response: {} body_len={d}\n", .{ meta_response.http_head.status, meta_response.body.len });
+    try std.testing.expect(meta_response.http_head.status == .no_content or meta_response.http_head.status == .ok);
 
-    std.log.info("=== DONE 07_deleteObject: {} ===\n", .{response.status});
+    std.log.info("=== DONE 07_deleteObject: {} ===\n", .{response.http_head.status});
 }
 
 // 8. Delete bucket
@@ -396,9 +396,9 @@ test "08_deleteBucket" {
 
     var response = try ctx.client.deleteBucket(test_bucket);
     defer response.deinit();
-    std.log.info("  Got response: {} body_len={d}\n", .{ response.status, response.body.len });
+    std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
 
     // 204 No Content is expected for successful delete
-    try std.testing.expect(response.status == .no_content or response.status == .ok);
-    std.log.info("=== DONE 08_deleteBucket: {} ===\n", .{response.status});
+    try std.testing.expect(response.http_head.status == .no_content or response.http_head.status == .ok);
+    std.log.info("=== DONE 08_deleteBucket: {} ===\n", .{response.http_head.status});
 }

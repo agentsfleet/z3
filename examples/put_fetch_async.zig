@@ -57,7 +57,7 @@ fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
         if (future.await(io)) |res| {
             var response = res;
             defer response.deinit();
-            std.debug.print("[{d}] {s}: {} - \"{s}\"\n", .{ i, test_keys[i], response.status, response.body });
+            std.debug.print("[{d}] {s}: {} - \"{s}\"\n", .{ i, test_keys[i], response.http_head.status, response.body });
         } else |_| {
             std.debug.print("[{d}] {s}: ERROR\n", .{ i, test_keys[i] });
         }
@@ -86,7 +86,7 @@ fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
         if (future.await(io)) |res| {
             var response = res;
             defer response.deinit();
-            std.debug.print("[{d}] {s}: {} - \"{s}\"\n", .{ i, test_keys[i], response.status, response.body });
+            std.debug.print("[{d}] {s}: {} - \"{s}\"\n", .{ i, test_keys[i], response.http_head.status, response.body });
             total_bytes += response.body.len;
         } else |_| {
             std.debug.print("[{d}] {s}: ERROR\n", .{ i, test_keys[i] });

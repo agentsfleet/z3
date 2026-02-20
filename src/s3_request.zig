@@ -183,6 +183,8 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
     var redirect_buffer: [8 * 1024]u8 = undefined;
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
+    var head_iter = response.head.iterateHeaders();
+
     const response_body: []u8 = if (response.head.status == .no_content or req.http_method == .HEAD)
         ""
     else blk: {
@@ -193,18 +195,17 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         break :blk reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
     };
 
-    var head_iter = response.head.iterateHeaders();
-
     // return S3Client.Response{
     //     .status = response.head.status,
     //     .body = response_body,
     //     .allocator = self.allocator,
     // };
+
     return S3Client.Response{
         .http_head = response.head,
         .body = response_body,
         .allocator = self.allocator,
-        .s3_head = .parse(self.allocator, &head_iter),
+        .s3_head = try .parse(self.allocator, &head_iter),
     };
 }
 
@@ -231,6 +232,8 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
     var redirect_buffer: [8 * 1024]u8 = undefined;
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
+    var head_iter = response.head.iterateHeaders();
+
     const response_body: []u8 = if (response.head.status == .no_content or req.http_method == .HEAD)
         ""
     else blk: {
@@ -241,10 +244,17 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
         break :blk response_reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
     };
 
+    // return S3Client.Response{
+    //     .status = response.head.status,
+    //     .body = response_body,
+    //     .allocator = self.allocator,
+    // };
+
     return S3Client.Response{
-        .status = response.head.status,
+        .http_head = response.head,
         .body = response_body,
         .allocator = self.allocator,
+        .s3_head = try .parse(self.allocator, &head_iter),
     };
 }
 
@@ -323,4 +333,22 @@ test "prepareRequest signs metadata headers" {
 
     try std.testing.expect(saw_meta);
     try std.testing.expect(saw_signed);
+}
+
+test "Parse custom S3 header" {
+    const response_bytes = "HTTP/1.1 200 OK\r\nContent-Length: 2000\r\nETag: ab3c265c99a353f103ea57cefa0acd7dbfbfce8f6a4b\r\nx-amz-version-id: 26b7e23aaabf5a80db01328e0b4ac735\r\nx-amz-server-side-encryption-customer-key-MD5: 8ddd8be4b179a529afa5f2ffae4b9858\r\n\r\n";
+    const head = try http.Client.Response.Head.parse(response_bytes);
+
+    try std.testing.expectEqual(http.Status.ok, head.status);
+    try std.testing.expectEqual(head.content_length.?, 2000);
+
+    var header_it = head.iterateHeaders();
+
+    var s3_head: S3Client.S3Header = try .parse(std.testing.allocator, &header_it);
+    defer s3_head.deinit();
+
+    try std.testing.expectEqualStrings("ab3c265c99a353f103ea57cefa0acd7dbfbfce8f6a4b", s3_head.etag orelse "");
+
+    try std.testing.expectEqualStrings("26b7e23aaabf5a80db01328e0b4ac735", try s3_head.getAmzValue("version-id") orelse "aaaaaah");
+    try std.testing.expectEqualStrings("8ddd8be4b179a529afa5f2ffae4b9858", try s3_head.getAmzValue("x-aMZ-SERVER-SIDE-ENCRYPTION-customer-key-MD5") orelse "aaaaaah");
 }

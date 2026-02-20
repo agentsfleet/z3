@@ -88,6 +88,7 @@ pub const Response = struct {
         if (self.body.len > 0) {
             self.allocator.free(self.body);
         }
+        self.s3_head.deinit();
     }
 };
 // pub const Response = struct {
@@ -166,7 +167,12 @@ pub const S3Header = struct {
     x_amz_header: std.hash_map.StringHashMap([]const u8),
     allocator: Allocator,
 
-    pub fn parse(allocator: Allocator, head_iter: http.HeaderIterator) !S3Header {
+    /// Parse the header key-value pairs from the iterator into the `S3Header` struct.
+    ///
+    /// All AWS header starting with `x-amz-` are collected into a hash map, while
+    /// other AWS specific header with regular syntax ("Etag", "Last-Modified" etc.)
+    /// are stored in named fields.
+    pub fn parse(allocator: Allocator, head_iter: *http.HeaderIterator) !S3Header {
         var s3_head: S3Header = .{
             .allocator = allocator,
             .x_amz_header = .init(allocator),
@@ -174,7 +180,8 @@ pub const S3Header = struct {
 
         while (head_iter.next()) |header| {
             if (std.ascii.startsWithIgnoreCase(header.name, "x-amz")) {
-                s3_head.x_amz_header.put(header.name, header.value);
+                const amz_key = try std.ascii.allocLowerString(allocator, header.name);
+                try s3_head.x_amz_header.put(amz_key, header.value);
             } else if (std.ascii.eqlIgnoreCase(header.name, "etag")) {
                 s3_head.etag = header.value;
             } else if (std.ascii.eqlIgnoreCase(header.name, "last-modified")) {
@@ -185,12 +192,30 @@ pub const S3Header = struct {
         return s3_head;
     }
 
-    pub fn deinit(self: *S3Header) !void {
+    /// Try to get a specified AWS header (those starting with `x-amz-`), otherwise
+    /// return `null`.
+    ///
+    /// Its possible to use the full header key or only the part trailing the `x-amz-`
+    /// substring. Headers are checked case-insesitive.
+    ///
+    /// I.e. for getting the value of the `x-amz-version-id` header both calls
+    /// are possible: `getAmzValue("x-amz-version-id")` or `getAmzValue("version-id")`
+    pub fn getAmzValue(self: *S3Header, key: []const u8) !?[]const u8 {
+        var key_buf: [64]u8 = undefined;
+        var lower_buf: [64]u8 = undefined;
+        const amz_key = if (std.ascii.startsWithIgnoreCase(key, "x-amz-"))
+            std.ascii.lowerString(&lower_buf, key)
+        else
+            try std.fmt.bufPrint(&key_buf, "x-amz-{s}", .{std.ascii.lowerString(&lower_buf, key)});
+
+        return self.x_amz_header.get(amz_key);
+    }
+
+    pub fn deinit(self: *S3Header) void {
         if (self.x_amz_header.count() > 0) {
-            var iter = self.x_amz_header.iterator();
-            while (iter.next()) |e| {
-                self.allocator.free(e.key_ptr.*);
-                self.allocator.free(e.value_ptr.*);
+            var it = self.x_amz_header.iterator();
+            while (it.next()) |v| {
+                self.allocator.free(v.key_ptr.*);
             }
             self.x_amz_header.deinit();
         }

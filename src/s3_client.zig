@@ -80,7 +80,7 @@ pub const Response = struct {
     /// Standard http header parsed by the `std.http.Client.receiveHead()` function
     http_head: http.Client.Response.Head,
     /// S3/Aws specific header
-    s3_head: S3Header,
+    s3_head: S3Head,
     body: []u8,
     allocator: Allocator,
 
@@ -91,17 +91,6 @@ pub const Response = struct {
         self.s3_head.deinit();
     }
 };
-// pub const Response = struct {
-//     status: http.Status,
-//     body: []u8,
-//     allocator: Allocator,
-
-//     pub fn deinit(self: *Response) void {
-//         if (self.body.len > 0) {
-//             self.allocator.free(self.body);
-//         }
-//     }
-// };
 
 pub const Error = error{
     RequestFailed,
@@ -161,19 +150,19 @@ pub const ObjectStream = struct {
 };
 
 /// Struct holding S3/AWS specific header
-pub const S3Header = struct {
+pub const S3Head = struct {
     etag: ?[]const u8 = null,
     last_modified: ?[]const u8 = null,
     x_amz_header: std.hash_map.StringHashMap([]const u8),
     allocator: Allocator,
 
-    /// Parse the header key-value pairs from the iterator into the `S3Header` struct.
+    /// Parse the header key-value pairs from the iterator into the `S3Head` struct.
     ///
     /// All AWS header starting with `x-amz-` are collected into a hash map, while
     /// other AWS specific header with regular syntax ("Etag", "Last-Modified" etc.)
     /// are stored in named fields.
-    pub fn parse(allocator: Allocator, head_iter: *http.HeaderIterator) !S3Header {
-        var s3_head: S3Header = .{
+    pub fn parse(allocator: Allocator, head_iter: *http.HeaderIterator) !S3Head {
+        var s3_head: S3Head = .{
             .allocator = allocator,
             .x_amz_header = .init(allocator),
         };
@@ -200,7 +189,7 @@ pub const S3Header = struct {
     ///
     /// I.e. for getting the value of the `x-amz-version-id` header both calls
     /// are possible: `getAmzValue("x-amz-version-id")` or `getAmzValue("version-id")`
-    pub fn getAmzValue(self: *S3Header, key: []const u8) !?[]const u8 {
+    pub fn getAmzValue(self: *S3Head, key: []const u8) !?[]const u8 {
         var key_buf: [64]u8 = undefined;
         var lower_buf: [64]u8 = undefined;
         const amz_key = if (std.ascii.startsWithIgnoreCase(key, "x-amz-"))
@@ -211,7 +200,7 @@ pub const S3Header = struct {
         return self.x_amz_header.get(amz_key);
     }
 
-    pub fn deinit(self: *S3Header) void {
+    pub fn deinit(self: *S3Head) void {
         if (self.x_amz_header.count() > 0) {
             var it = self.x_amz_header.iterator();
             while (it.next()) |v| {

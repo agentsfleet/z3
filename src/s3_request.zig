@@ -195,12 +195,6 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         break :blk reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
     };
 
-    // return S3Client.Response{
-    //     .status = response.head.status,
-    //     .body = response_body,
-    //     .allocator = self.allocator,
-    // };
-
     return S3Client.Response{
         .http_head = response.head,
         .body = response_body,
@@ -243,12 +237,6 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
         const response_reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
         break :blk response_reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
     };
-
-    // return S3Client.Response{
-    //     .status = response.head.status,
-    //     .body = response_body,
-    //     .allocator = self.allocator,
-    // };
 
     return S3Client.Response{
         .http_head = response.head,
@@ -344,7 +332,7 @@ test "Parse custom S3 header" {
 
     var header_it = head.iterateHeaders();
 
-    var s3_head: S3Client.S3Header = try .parse(std.testing.allocator, &header_it);
+    var s3_head: S3Client.S3Head = try .parse(std.testing.allocator, &header_it);
     defer s3_head.deinit();
 
     try std.testing.expectEqualStrings("ab3c265c99a353f103ea57cefa0acd7dbfbfce8f6a4b", s3_head.etag orelse "");

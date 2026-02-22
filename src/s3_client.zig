@@ -85,6 +85,7 @@ pub const Response = struct {
     allocator: Allocator,
 
     pub fn deinit(self: *Response) void {
+        self.allocator.free(self.http_head.bytes);
         if (self.body.len > 0) {
             self.allocator.free(self.body);
         }
@@ -111,6 +112,8 @@ pub const RequestError = Error || Allocator.Error || error{
     WriteFailed,
     RequestTooLong,
     StringToSignTooLong,
+    CopyResponseHeadFailed,
+    ParseResponseHeadFailed,
 };
 
 pub const ObjectStream = struct {
@@ -166,6 +169,7 @@ pub const S3Head = struct {
             .allocator = allocator,
             .x_amz_header = .init(allocator),
         };
+        errdefer s3_head.deinit();
 
         while (head_iter.next()) |header| {
             if (std.ascii.startsWithIgnoreCase(header.name, "x-amz")) {
@@ -190,12 +194,15 @@ pub const S3Head = struct {
     /// I.e. for getting the value of the `x-amz-version-id` header both calls
     /// are possible: `getAmzValue("x-amz-version-id")` or `getAmzValue("version-id")`
     pub fn getAmzValue(self: *S3Head, key: []const u8) !?[]const u8 {
-        var key_buf: [64]u8 = undefined;
-        var lower_buf: [64]u8 = undefined;
         const amz_key = if (std.ascii.startsWithIgnoreCase(key, "x-amz-"))
-            std.ascii.lowerString(&lower_buf, key)
-        else
-            try std.fmt.bufPrint(&key_buf, "x-amz-{s}", .{std.ascii.lowerString(&lower_buf, key)});
+            try std.ascii.allocLowerString(self.allocator, key)
+        else blk: {
+            const low_key = try std.ascii.allocLowerString(self.allocator, key);
+            defer self.allocator.free(low_key);
+            const low_str = try std.fmt.allocPrint(self.allocator, "x-amz-{s}", .{low_key});
+            break :blk low_str;
+        };
+        defer self.allocator.free(amz_key);
 
         return self.x_amz_header.get(amz_key);
     }

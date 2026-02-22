@@ -8,15 +8,7 @@ jobs:
     steps:
       - uses: https://data.forgejo.org/actions/checkout@v4
 
-      - name: Setup Zig
-        run: |
-          set -euo pipefail
-          ZIG_VERSION=$(grep -oP '\.minimum_zig_version\s*=\s*"\K[^"]+' build.zig.zon)
-          ZIG_DIR="zig-x86_64-linux-${ZIG_VERSION}"
-          ZIG_URL="https://zig.squirl.dev/builds/${ZIG_DIR}.tar.xz"
-          curl -fL "${ZIG_URL}" -o zig.tar.xz
-          tar -xf zig.tar.xz
-          echo "$PWD/${ZIG_DIR}" >> "$GITHUB_PATH"
+      - uses: https://codeberg.org/mlugg/setup-zig@v2
 
       - name: Run tests
         run: zig build test

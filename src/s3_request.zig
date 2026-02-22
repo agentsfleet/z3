@@ -228,7 +228,10 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
     var redirect_buffer: [8 * 1024]u8 = undefined;
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
-    var head_iter = response.head.iterateHeaders();
+    const header_copy = self.allocator.dupe(u8, response.head.bytes) catch return error.CopyResponseHeadFailed;
+    errdefer self.allocator.free(header_copy);
+    var resp_head_copy = http.Client.Response.Head.parse(header_copy) catch return error.ParseResponseHeadFailed;
+    var head_iter = resp_head_copy.iterateHeaders();
 
     const response_body: []u8 = if (response.head.status == .no_content or req.http_method == .HEAD)
         ""
@@ -241,7 +244,7 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
     };
 
     return S3Client.Response{
-        .http_head = response.head,
+        .http_head = resp_head_copy,
         .body = response_body,
         .allocator = self.allocator,
         .s3_head = try .parse(self.allocator, &head_iter),

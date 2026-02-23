@@ -39,6 +39,7 @@ pub fn main(init: std.process.Init) !void {
         .secret_access_key = secret_key,
         .region = region,
         .endpoint = endpoint,
+        .virtual_host_style = false,
     }, .{ .io = io });
     defer client.deinit();
 
@@ -127,13 +128,17 @@ pub fn main(init: std.process.Init) !void {
         std.log.err("Uploaded parts don't match original part count! {d} != {d}", .{ uploaded_parts.items.len, part_count });
     }
 
+    for (uploaded_parts.items) |value| {
+        std.log.debug("Part {d}: {s}", .{ value.part_number, value.etag orelse "missing etag" });
+    }
+
     var complete_multipart_resp = try client.completeMultipartUpload(bucket, key, .{
         .upload_id = upload_id,
         .uploaded_parts = uploaded_parts.items,
     });
     defer complete_multipart_resp.deinit();
 
-    std.log.info("Successfully uploaded the file with mulitpart upload", .{});
+    std.log.info("Successfully uploaded the file with multipart upload", .{});
 }
 
 // helper function for downloading parts and interacting with the semaphore
@@ -166,6 +171,7 @@ fn uploadPart(
         part_number,
         .{},
     ) catch return Io.Cancelable.Canceled;
+    defer resp.deinit();
 
     // Add information about uploaded part to part array. This array is needed
     // to complete the multipart upload successful.

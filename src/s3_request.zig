@@ -167,10 +167,14 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
     defer http_req.deinit();
 
     if (req.is_bodiless) {
-        http_req.sendBodiless() catch return error.SendFailed;
-        // Extra flush to ensure data is fully sent before waiting for response
-        // (workaround for TLS+async Io buffering issue with bodiless requests)
-        http_req.connection.?.flush() catch return error.FlushFailed;
+        if (http_req.method == .POST) {
+            http_req.sendBodyComplete("") catch return error.SendFailed;
+        } else {
+            http_req.sendBodiless() catch return error.SendFailed;
+            // Extra flush to ensure data is fully sent before waiting for response
+            // (workaround for TLS+async Io buffering issue with bodiless requests)
+            http_req.connection.?.flush() catch return error.FlushFailed;
+        }
     } else {
         std.debug.assert(req.body.len == req.content_length);
         http_req.transfer_encoding = .{ .content_length = req.content_length };

@@ -55,6 +55,21 @@ pub const UploadPartOptions = struct {
     part: u32,
 };
 
+/// Metadata of a completed part from a `MultipartUpload`.
+/// An array of all such parts is necessary to complete the whole multipart
+/// upload
+pub const UploadedPart = struct {
+    etag: ?[]const u8 = null,
+    part_number: u32,
+    crc32_checksum: ?[]const u8 = null,
+    crc32c_checksum: ?[]const u8,
+    crc64nvme_checksum: ?[]const u8,
+    sha1_checksum: ?[]const u8,
+    sha256_checksum: ?[]const u8,
+};
+
+pub const CompleteMultipartUploadOptions = struct { request: RequestOptions = .{}, upload_id: []const u8, uploaded_parts: []UploadedPart };
+
 /// Options that can be passed to a `Get-Object` request.
 pub const GetObjectOptions = struct {
     request: RequestOptions = .{},
@@ -246,6 +261,7 @@ pub const deleteBucket = ops.deleteBucket;
 pub const copyObject = ops.copyObject;
 pub const listBuckets = ops.listBuckets;
 pub const createMultipartUpload = ops.createMultipartUpload;
+pub const uploadPart = ops.uploadPart;
 
 pub const GetFileError =
     @typeInfo(@typeInfo(@TypeOf(getObjectStream)).@"fn".return_type.?).error_union.error_set ||

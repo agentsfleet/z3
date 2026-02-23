@@ -80,6 +80,9 @@ pub fn main(init: std.process.Init) !void {
         try ranges.append(allocator, .{ .start = start, .end = end });
     }
 
+    var uploaded_parts = std.ArrayList(S3Client.UploadedPart).empty;
+    defer uploaded_parts.clearAndFree(allocator);
+
     // TODO: CreateMultipartUpload here
     var create_response = try client.createMultipartUpload(bucket, key, .{});
     defer create_response.deinit();
@@ -100,17 +103,39 @@ pub fn main(init: std.process.Init) !void {
     // Create a timestamp just for making timeintervals visible
     const start_t = std.Io.Timestamp.now(io, .awake);
     std.log.info("Starting download process", .{});
+
+    for (ranges.items, 1..) |r, part_number| {
+        const body = content[r.start .. r.end + 1];
+        futures.async(io, uploadPart, .{
+            io,
+            &semaphore,
+            &client,
+            bucket,
+            key,
+            body,
+            upload_id,
+            part_number,
+            start_t,
+        });
+    }
+
+    if (part_count != uploaded_parts.items.len) {
+        std.log.err("Uploaded parts don't match original part count! {d} != {d}", .{ uploaded_parts.items.len, part_count });
+    }
 }
 
 // helper function for downloading parts and interacting with the semaphore
-fn downloadAndWrite(
+fn uploadPart(
     io: Io,
+    allocator: std.mem.Allocator,
     sema: *Io.Semaphore,
-    file: *std.Io.File,
     client: *S3Client,
     bucket: []const u8,
     key: []const u8,
-    range: S3Client.ContentRange,
+    body: []const u8,
+    upload_id: []const u8,
+    part_number: u32,
+    uploads: *std.ArrayList(S3Client.UploadedPart),
     start_t: Io.Timestamp,
 ) !void {
     // We need to always return `Io.Cancelable.Canceled`. Otherwise `Group`
@@ -118,9 +143,24 @@ fn downloadAndWrite(
     sema.wait(io) catch return Io.Cancelable.Canceled;
     defer sema.post(io);
 
-    std.log.debug("{d}ms: Start download of range {d}-{d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), range.start, range.end });
+    std.log.debug("{d}ms: Start upload of part {d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), part_number });
 
-    // TODO: UploadPart here and push to list holding CompletedPart items
-    //
-    std.log.debug("{d}ms: Successfully written range {d}-{d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), range.start, range.end });
+    // Upload part of file
+    var resp = client.uploadPart(
+        bucket,
+        key,
+        body,
+        upload_id,
+        part_number,
+        .{},
+    ) catch return Io.Cancelable.Canceled;
+
+    // Add information about uploaded part to part array. This array is needed
+    // to complete the multipart upload successful.
+    try uploads.append(allocator, .{
+        .etag = resp.s3_head.etag,
+        .part_number = part_number,
+    });
+
+    std.log.debug("{d}ms: Successfully uploaded part {d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), part_number });
 }

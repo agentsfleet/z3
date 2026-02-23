@@ -200,6 +200,7 @@ pub fn uploadPart(
     self: *S3Client,
     bucket: []const u8,
     key: []const u8,
+    body: []const u8,
     upload_id: []const u8,
     part_count: u32,
     options: S3Client.RequestOptions,
@@ -208,14 +209,27 @@ pub fn uploadPart(
     defer self.allocator.free(query_string);
 
     var req = try request.prepareRequest(self, .PUT, bucket, key, .{
+        .body = body,
         .query = query_string,
         .options = options,
     });
     defer req.deinit();
+
+    return request.executeRequest(self, &req);
 }
 
 /// Complete a multipart upload after all parts have been uploaded
-pub fn completeMultipartUpload() !void {}
+pub fn completeMultipartUpload(
+    self: *S3Client,
+    bucket: []const u8,
+    key: []const u8,
+    options: S3Client.CompleteMultipartUploadOptions,
+) S3Client.RequestError!S3Client.Response {
+        const query_string = try std.fmt.allocPrint(self.allocator, "uploadId={s}", .{options.upload_id});
+        defer self.allocator.free(query_string);
+
+        var req = try request.prepareRequest(self, .POST, bucket, key, .{ .query = query_string, .options = options.request, .body = });
+    }
 
 /// DELETE object from S3
 pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {

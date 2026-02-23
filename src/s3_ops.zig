@@ -224,12 +224,35 @@ pub fn completeMultipartUpload(
     bucket: []const u8,
     key: []const u8,
     options: S3Client.CompleteMultipartUploadOptions,
-) S3Client.RequestError!S3Client.Response {
-        const query_string = try std.fmt.allocPrint(self.allocator, "uploadId={s}", .{options.upload_id});
-        defer self.allocator.free(query_string);
+) S3Client.RequestError!types.CompleteMultipartUploadResult {
+    const query_string = try std.fmt.allocPrint(self.allocator, "uploadId={s}", .{options.upload_id});
+    defer self.allocator.free(query_string);
 
-        var req = try request.prepareRequest(self, .POST, bucket, key, .{ .query = query_string, .options = options.request, .body = });
+    var body = std.ArrayList(u8).empty;
+    defer body.clearAndFree(self.allocator);
+
+    try body.appendSlice(self.allocator, "<?xml version=\"1.0\" encoding=\"UTF-8\"?><CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">");
+
+    for (options.uploaded_parts) |part| {
+        const xml_str = try part.buildXmlString(self.allocator);
+        defer self.allocator.free(xml_str);
+        try body.appendSlice(self.allocator, xml_str);
     }
+
+    try body.appendSlice(self.allocator, "</CompleteMultipartUpload>");
+
+    var req = try request.prepareRequest(self, .POST, bucket, key, .{
+        .query = query_string,
+        .options = options.request,
+        .body = body.items,
+    });
+    defer req.deinit();
+
+    var resp = try request.executeRequest(self, &req);
+    defer resp.deinit();
+
+    return xml.parseCompleteMultipartUpload(self.allocator, resp.body);
+}
 
 /// DELETE object from S3
 pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {

@@ -147,10 +147,25 @@ pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucke
 
 pub fn parseCreateMultipartUpload(allocator: Allocator, body: []const u8) !types.CreateMultipartUploadResult {
     return .{
-        .bucket = extractTagDupe(allocator, body, "Bucket"),
-        .key = extractTagDupe(allocator, body, "Key"),
-        .upload_id = extractTagDupe(allocator, body, "UploadId"),
+        .bucket = try extractTagDupe(allocator, body, "Bucket"),
+        .key = try extractTagDupe(allocator, body, "Key"),
+        .upload_id = try extractTagDupe(allocator, body, "UploadId"),
         .allocator = allocator,
+    };
+}
+
+pub fn parseCompleteMultipartUpload(allocator: Allocator, body: []const u8) !types.CompleteMultipartUploadResult {
+    return .{
+        .allocator = allocator,
+        .bucket = try extractTagDupe(allocator, body, "Bucket"),
+        .key = try extractTagDupe(allocator, body, "Key"),
+        .etag = try extractTagDupe(allocator, body, "ETag"),
+        .checksum_crc32 = try extractTagOptionalDupe(allocator, body, "ChecksumCRC32"),
+        .checksum_crc32c = try extractTagOptionalDupe(allocator, body, "ChecksumCRC32C"),
+        .checksum_crc64nvme = try extractTagOptionalDupe(allocator, body, "ChecksumCRC64NVME"),
+        .checksum_sha1 = try extractTagOptionalDupe(allocator, body, "ChecksumSHA1"),
+        .checksum_sha256 = try extractTagOptionalDupe(allocator, body, "ChecksumSHA256"),
+        .checksum_type = try extractTagOptionalDupe(allocator, body, "ChecksumType"),
     };
 }
 

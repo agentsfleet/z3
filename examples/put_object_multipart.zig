@@ -108,20 +108,32 @@ pub fn main(init: std.process.Init) !void {
         const body = content[r.start .. r.end + 1];
         futures.async(io, uploadPart, .{
             io,
+            allocator,
             &semaphore,
             &client,
             bucket,
             key,
             body,
             upload_id,
-            part_number,
+            @intCast(part_number),
+            &uploaded_parts,
             start_t,
         });
     }
 
+    try futures.await(io);
+
     if (part_count != uploaded_parts.items.len) {
         std.log.err("Uploaded parts don't match original part count! {d} != {d}", .{ uploaded_parts.items.len, part_count });
     }
+
+    var complete_multipart_resp = try client.completeMultipartUpload(bucket, key, .{
+        .upload_id = upload_id,
+        .uploaded_parts = uploaded_parts.items,
+    });
+    defer complete_multipart_resp.deinit();
+
+    std.log.info("Successfully uploaded the file with mulitpart upload", .{});
 }
 
 // helper function for downloading parts and interacting with the semaphore
@@ -157,10 +169,10 @@ fn uploadPart(
 
     // Add information about uploaded part to part array. This array is needed
     // to complete the multipart upload successful.
-    try uploads.append(allocator, .{
+    uploads.append(allocator, .{
         .etag = resp.s3_head.etag,
         .part_number = part_number,
-    });
+    }) catch return Io.Cancelable.Canceled;
 
     std.log.debug("{d}ms: Successfully uploaded part {d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), part_number });
 }

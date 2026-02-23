@@ -85,6 +85,43 @@ pub const CreateMultipartUploadResult = struct {
     }
 };
 
+pub const CompleteMultipartUploadResult = struct {
+    bucket: []const u8,
+    key: []const u8,
+    etag: []const u8,
+    checksum_crc32: ?[]const u8,
+    checksum_crc32c: ?[]const u8,
+    checksum_crc64nvme: ?[]const u8,
+    checksum_sha1: ?[]const u8,
+    checksum_sha256: ?[]const u8,
+    checksum_type: ?[]const u8,
+    allocator: Allocator,
+
+    pub fn deinit(self: *CompleteMultipartUploadResult) void {
+        self.allocator.free(self.bucket);
+        self.allocator.free(self.key);
+        self.allocator.free(self.etag);
+        if (self.checksum_crc32) |v| {
+            self.allocator.free(v);
+        }
+        if (self.checksum_crc32c) |v| {
+            self.allocator.free(v);
+        }
+        if (self.checksum_crc64nvme) |v| {
+            self.allocator.free(v);
+        }
+        if (self.checksum_sha1) |v| {
+            self.allocator.free(v);
+        }
+        if (self.checksum_sha256) |v| {
+            self.allocator.free(v);
+        }
+        if (self.checksum_type) |v| {
+            self.allocator.free(v);
+        }
+    }
+};
+
 /// S3 error parsed from XML response
 pub const S3Error = struct {
     code: []const u8,

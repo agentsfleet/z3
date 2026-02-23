@@ -62,13 +62,34 @@ pub const UploadedPart = struct {
     etag: ?[]const u8 = null,
     part_number: u32,
     crc32_checksum: ?[]const u8 = null,
-    crc32c_checksum: ?[]const u8,
-    crc64nvme_checksum: ?[]const u8,
-    sha1_checksum: ?[]const u8,
-    sha256_checksum: ?[]const u8,
+    crc32c_checksum: ?[]const u8 = null,
+    crc64nvme_checksum: ?[]const u8 = null,
+    sha1_checksum: ?[]const u8 = null,
+    sha256_checksum: ?[]const u8 = null,
+
+    /// Build XML string needed to complete the multipart upload
+    pub fn buildXmlString(self: UploadedPart, allocator: std.mem.Allocator) ![]const u8 {
+        return std.fmt.allocPrint(
+            allocator,
+            "<Part><ChecksumCRC32>{s}</ChecksumCRC32><ChecksumCRC32C>{s}</ChecksumCRC32C><ChecksumCRC64NVME>{s}</ChecksumCRC64NVME><ChecksumSHA1>{s}</ChecksumSHA1><ChecksumSHA256>{s}</ChecksumSHA256><ETag>{s}</ETag><PartNumber>{d}</PartNumber></Part>",
+            .{
+                self.crc32_checksum orelse "",
+                self.crc32c_checksum orelse "",
+                self.crc64nvme_checksum orelse "",
+                self.sha1_checksum orelse "",
+                self.sha256_checksum orelse "",
+                self.etag orelse "",
+                self.part_number,
+            },
+        );
+    }
 };
 
-pub const CompleteMultipartUploadOptions = struct { request: RequestOptions = .{}, upload_id: []const u8, uploaded_parts: []UploadedPart };
+pub const CompleteMultipartUploadOptions = struct {
+    request: RequestOptions = .{},
+    upload_id: []const u8,
+    uploaded_parts: []UploadedPart,
+};
 
 /// Options that can be passed to a `Get-Object` request.
 pub const GetObjectOptions = struct {
@@ -262,6 +283,7 @@ pub const copyObject = ops.copyObject;
 pub const listBuckets = ops.listBuckets;
 pub const createMultipartUpload = ops.createMultipartUpload;
 pub const uploadPart = ops.uploadPart;
+pub const completeMultipartUpload = ops.completeMultipartUpload;
 
 pub const GetFileError =
     @typeInfo(@typeInfo(@TypeOf(getObjectStream)).@"fn".return_type.?).error_union.error_set ||

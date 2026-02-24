@@ -182,7 +182,7 @@ pub fn createMultipartUpload(
     options: S3Client.CreateMultipartUploadOptions,
 ) S3Client.RequestError!types.CreateMultipartUploadResult {
     var req = try request.prepareRequest(self, .POST, bucket, key, .{
-        .query = "uploads",
+        .query = "uploads=1",
         .options = options.request,
         .metadata = options.metadata,
         .content_type = options.content_type,
@@ -191,6 +191,8 @@ pub fn createMultipartUpload(
 
     var response = try request.executeRequest(self, &req);
     defer response.deinit();
+
+    std.log.debug("Response body: {s}", .{response.body});
 
     return xml.parseCreateMultipartUpload(self.allocator, response.body);
 }
@@ -202,10 +204,10 @@ pub fn uploadPart(
     key: []const u8,
     body: []const u8,
     upload_id: []const u8,
-    part_count: u32,
+    part_number: u32,
     options: S3Client.RequestOptions,
 ) S3Client.RequestError!S3Client.Response {
-    const query_string = try std.fmt.allocPrint(self.allocator, "partNumber={d}&uploadId={s}", .{ part_count, upload_id });
+    const query_string = try std.fmt.allocPrint(self.allocator, "partNumber={d}&uploadId={s}", .{ part_number, upload_id });
     defer self.allocator.free(query_string);
 
     var req = try request.prepareRequest(self, .PUT, bucket, key, .{
@@ -231,15 +233,34 @@ pub fn completeMultipartUpload(
     var body = std.ArrayList(u8).empty;
     defer body.clearAndFree(self.allocator);
 
+    const uploads_sorted = try self.allocator.alloc(S3Client.UploadedPart, options.uploaded_parts.len);
+    defer self.allocator.free(uploads_sorted);
+
+    @memmove(uploads_sorted, options.uploaded_parts);
+
+    std.sort.heap(
+        S3Client.UploadedPart,
+        uploads_sorted,
+        {},
+        struct {
+            fn lessThan(_: void, a: S3Client.UploadedPart, b: S3Client.UploadedPart) bool {
+                return a.part_number < b.part_number;
+            }
+        }.lessThan,
+    );
+
     try body.appendSlice(self.allocator, "<?xml version=\"1.0\" encoding=\"UTF-8\"?><CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">");
 
-    for (options.uploaded_parts) |part| {
+    for (uploads_sorted) |part| {
         const xml_str = try part.buildXmlString(self.allocator);
+        std.debug.print("{s}\n", .{xml_str});
         defer self.allocator.free(xml_str);
         try body.appendSlice(self.allocator, xml_str);
     }
 
     try body.appendSlice(self.allocator, "</CompleteMultipartUpload>");
+
+    // std.debug.print("{s}\n", .{body.items});
 
     var req = try request.prepareRequest(self, .POST, bucket, key, .{
         .query = query_string,
@@ -250,6 +271,9 @@ pub fn completeMultipartUpload(
 
     var resp = try request.executeRequest(self, &req);
     defer resp.deinit();
+
+    std.log.debug("Status: {t}", .{resp.http_head.status});
+    std.debug.print("{s}\n", .{resp.body});
 
     return xml.parseCompleteMultipartUpload(self.allocator, resp.body);
 }

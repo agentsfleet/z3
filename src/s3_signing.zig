@@ -68,7 +68,20 @@ pub fn signRequest(
 
     var canonical_buf: [4096]u8 = undefined;
     const content_hash = findHeaderValue(headers_sorted, "x-amz-content-sha256") orelse return error.RequestTooLong;
-    const canonical_request = std.fmt.bufPrint(&canonical_buf, "{s}\n{s}\n{s}\n{s}\n\n{s}\n{s}", .{ method, canonical_uri, query orelse "", canonical_headers.items, signed_headers.items, content_hash }) catch return error.RequestTooLong;
+    const canonical_request = std.fmt.bufPrint(
+        &canonical_buf,
+        "{s}\n{s}\n{s}\n{s}\n\n{s}\n{s}",
+        .{
+            method,
+            canonical_uri,
+            query orelse "",
+            canonical_headers.items,
+            signed_headers.items,
+            content_hash,
+        },
+    ) catch return error.RequestTooLong;
+
+    // std.debug.print("{s}\n", .{canonical_request});
 
     var canonical_hash_buf: [64]u8 = undefined;
     internal.sha256Hex(canonical_request, &canonical_hash_buf);

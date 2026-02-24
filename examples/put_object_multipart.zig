@@ -39,7 +39,7 @@ pub fn main(init: std.process.Init) !void {
         .secret_access_key = secret_key,
         .region = region,
         .endpoint = endpoint,
-        .virtual_host_style = false,
+        .virtual_host_style = true,
     }, .{ .io = io });
     defer client.deinit();
 
@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) !void {
         \\mouth. Even the all-powerful Pointing has no control about the blind texts it is
     ;
 
-    const part_size: usize = 50; // Size of upload part in bytes
+    const part_size: usize = 150; // Size of upload part in bytes
 
     const file_size = content.len;
 
@@ -83,6 +83,11 @@ pub fn main(init: std.process.Init) !void {
 
     var uploaded_parts = std.ArrayList(S3Client.UploadedPart).empty;
     defer uploaded_parts.clearAndFree(allocator);
+    // You need to free all strings that are copied to the uploaded parts array
+    // E.g. the etag, or any checksum if used.
+    defer for (uploaded_parts.items) |value| {
+        allocator.free(value.etag);
+    };
 
     // TODO: CreateMultipartUpload here
     var create_response = try client.createMultipartUpload(bucket, key, .{});
@@ -90,6 +95,8 @@ pub fn main(init: std.process.Init) !void {
 
     // Save upload ID to constant
     const upload_id = create_response.upload_id;
+    std.log.debug("upload id: {s}", .{create_response.upload_id});
+    if (upload_id.len == 0) return error.NoUploadId;
 
     // Set a value for max parallel downloads
     const max_concurrency_count = 3;
@@ -103,7 +110,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Create a timestamp just for making timeintervals visible
     const start_t = std.Io.Timestamp.now(io, .awake);
-    std.log.info("Starting download process", .{});
+    std.log.info("Starting upload process", .{});
 
     for (ranges.items, 1..) |r, part_number| {
         const body = content[r.start .. r.end + 1];
@@ -128,20 +135,16 @@ pub fn main(init: std.process.Init) !void {
         std.log.err("Uploaded parts don't match original part count! {d} != {d}", .{ uploaded_parts.items.len, part_count });
     }
 
-    for (uploaded_parts.items) |value| {
-        std.log.debug("Part {d}: {s}", .{ value.part_number, value.etag orelse "missing etag" });
-    }
-
     var complete_multipart_resp = try client.completeMultipartUpload(bucket, key, .{
         .upload_id = upload_id,
         .uploaded_parts = uploaded_parts.items,
     });
     defer complete_multipart_resp.deinit();
 
-    std.log.info("Successfully uploaded the file with multipart upload", .{});
+    std.log.info("Successfully completed multipart upload. Etag of full object: {s}", .{complete_multipart_resp.etag});
 }
 
-// helper function for downloading parts and interacting with the semaphore
+// helper function for uploading parts and interacting with the semaphore
 fn uploadPart(
     io: Io,
     allocator: std.mem.Allocator,
@@ -175,10 +178,13 @@ fn uploadPart(
 
     // Add information about uploaded part to part array. This array is needed
     // to complete the multipart upload successful.
+    const etag = allocator.dupe(u8, resp.s3_head.etag orelse {
+        return Io.Cancelable.Canceled;
+    }) catch return Io.Cancelable.Canceled;
     uploads.append(allocator, .{
-        .etag = resp.s3_head.etag,
+        .etag = etag,
         .part_number = part_number,
     }) catch return Io.Cancelable.Canceled;
 
-    std.log.debug("{d}ms: Successfully uploaded part {d}", .{ start_t.untilNow(io, .awake).toMilliseconds(), part_number });
+    std.log.debug("{d}ms: Successfully uploaded part {d}; etag: {s}", .{ start_t.untilNow(io, .awake).toMilliseconds(), part_number, etag });
 }

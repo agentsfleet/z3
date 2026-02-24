@@ -59,7 +59,7 @@ pub const UploadPartOptions = struct {
 /// An array of all such parts is necessary to complete the whole multipart
 /// upload
 pub const UploadedPart = struct {
-    etag: ?[]const u8 = null,
+    etag: []const u8,
     part_number: u32,
     crc32_checksum: ?[]const u8 = null,
     crc32c_checksum: ?[]const u8 = null,
@@ -78,7 +78,7 @@ pub const UploadedPart = struct {
                 self.crc64nvme_checksum orelse "",
                 self.sha1_checksum orelse "",
                 self.sha256_checksum orelse "",
-                self.etag orelse "",
+                self.etag,
                 self.part_number,
             },
         );

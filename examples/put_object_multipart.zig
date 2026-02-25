@@ -53,7 +53,10 @@ pub fn main(init: std.process.Init) !void {
         \\mouth. Even the all-powerful Pointing has no control about the blind texts it is
     ;
 
-    const part_size: usize = 1000; // Size of upload part in bytes
+    // WARN: Many providers restrict multipart uploads to min. 5MB per chunk.
+    // Thus, this example might not run on your machine. Check if you get an
+    // EntityToSmall error response and change the part_size.
+    const part_size: usize = 100; // Size of upload part in bytes
 
     const file_size = content.len;
 

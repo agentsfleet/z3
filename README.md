@@ -13,6 +13,7 @@
 - **Streaming**: Includes streaming APIs for object downloads and direct-to-file transfers.
 - **XML Parsing**: Built-in support for parsing S3 XML responses for object listings and error handling.
 - **Virtual-Host-Style Requests** Supports both: legacy path-style requests, as well as virtual-host-style requests.
+- **Multipart Upload** Upload big files in chunks (at least 5MB per chunk). Check the [`put-multipart` example](./examples/put_object_multipart.zig) for how to do this asynchronous.
 
 ## Prerequisites
 
@@ -96,6 +97,9 @@ pub fn main(init: std.process.Init) !void {
 - `headObject(bucket, key)`
 - `copyObject(src_bucket, src_key, dst_bucket, dst_key)`
 - `listObjects(bucket, options)`
+- `createMultipartUpload(bucket, key, options)`
+- `uploadPart(bucket, key, body, upload_id, part_number, options)`
+- `completeMultipartUpload(bucket, key, options)`
 
 ### Bucket Operations
 - `listBuckets()`
@@ -143,7 +147,6 @@ if (first.is_truncated and first.next_continuation_token != null) {
 
 `z3` is currently a work-in-progress. The following features are not yet implemented:
 
-- **Multipart Upload**: Essential for uploading files larger than 5GB or for better reliability with large files.
 - **Streaming Upload Signatures**: `putFile` requires a seekable file to compute content length and SHA-256; chunked signing is not yet implemented.
 - **Presigned URLs**: Support for generating temporary GET/PUT URLs.
 - **Advanced Authentication**: Support for IAM roles, environment variables, and AWS profile-based credential discovery.
@@ -155,6 +158,7 @@ The repository includes runnable examples in `examples/`:
 
 - `examples/put_fetch_async.zig`
 - `examples/get_object_multipart.zig`
+- `examples/put_object_multipart.zig`
 
 Run them with:
 

@@ -21,6 +21,7 @@ pub const Config = struct {
     /// See https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html
     /// for more information.
     virtual_host_style: bool = false,
+    unsigned_payload: bool = false,
 };
 
 pub const InitOptions = struct {

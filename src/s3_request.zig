@@ -41,7 +41,9 @@ pub fn prepareRequest(
     const date_header = &date_header_buf;
 
     const body_len = params.body_len orelse params.body.len;
-    const content_hash = if (params.content_hash) |hash|
+    const content_hash = if (self.config.unsigned_payload)
+        "UNSIGNED-PAYLOAD"
+    else if (params.content_hash) |hash|
         hash
     else blk: {
         var content_hash_buf: [64]u8 = undefined;

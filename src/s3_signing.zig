@@ -81,8 +81,6 @@ pub fn signRequest(
         },
     ) catch return error.RequestTooLong;
 
-    // std.debug.print("{s}\n", .{canonical_request});
-
     var canonical_hash_buf: [64]u8 = undefined;
     internal.sha256Hex(canonical_request, &canonical_hash_buf);
     const canonical_hash = &canonical_hash_buf;
@@ -124,6 +122,43 @@ fn findHeaderValue(headers: []const HeaderToSign, name: []const u8) ?[]const u8 
         if (std.mem.eql(u8, header.name, name)) return header.value;
     }
     return null;
+}
+
+test "unsigned payload request" {
+    const url = @import("s3_url.zig");
+    const bucket = "my-bucket";
+    const key = "my-key";
+
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+            .unsigned_payload = true,
+        },
+    };
+
+    const host = try url.getHost(&client, bucket);
+    defer client.allocator.free(host);
+
+    const auth = try signRequest(
+        &client,
+        "GET",
+        bucket,
+        key,
+        null,
+        &[_]HeaderToSign{
+            .{ .name = "host", .value = host },
+            .{ .name = "x-amz-date", .value = "20250101T000000Z" },
+            .{ .name = "x-amz-content-sha256", .value = "UNSIGNED-PAYLOAD" },
+        },
+    );
+    defer std.testing.allocator.free(auth);
+    try std.testing.expect(auth.len > 0);
 }
 
 test "signRequest includes large host headers" {

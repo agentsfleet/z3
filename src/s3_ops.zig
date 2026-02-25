@@ -192,6 +192,16 @@ pub fn createMultipartUpload(
     var response = try request.executeRequest(self, &req);
     defer response.deinit();
 
+    if (response.http_head.status != .ok) {
+        var s3_err = xml.parseS3Error(self.allocator, response.body) catch |err| {
+            std.log.err("failed to parse s3 error: {s}", .{@errorName(err)});
+            return error.RequestFailed;
+        };
+        defer s3_err.deinit();
+        std.log.err("S3 error: {s} - {s}", .{ s3_err.code, s3_err.message });
+        return error.S3Error;
+    }
+
     return xml.parseCreateMultipartUpload(self.allocator, response.body);
 }
 
@@ -267,6 +277,16 @@ pub fn completeMultipartUpload(
 
     var resp = try request.executeRequest(self, &req);
     defer resp.deinit();
+
+    if (resp.http_head.status != .ok) {
+        var s3_err = xml.parseS3Error(self.allocator, resp.body) catch |err| {
+            std.log.err("failed to parse s3 error: {s}", .{@errorName(err)});
+            return error.RequestFailed;
+        };
+        defer s3_err.deinit();
+        std.log.err("S3 error: {s} - {s}", .{ s3_err.code, s3_err.message });
+        return error.S3Error;
+    }
 
     return xml.parseCompleteMultipartUpload(self.allocator, resp.body);
 }

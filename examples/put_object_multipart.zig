@@ -84,13 +84,14 @@ pub fn main(init: std.process.Init) !void {
         try ranges.append(allocator, .{ .start = start, .end = end });
     }
 
-    var uploaded_parts = std.ArrayList(S3Client.UploadedPart).empty;
-    defer uploaded_parts.clearAndFree(allocator);
-    // You need to free all strings that are copied to the uploaded parts array
-    // E.g. the etag, or any checksum if used (see helper function below).
-    defer for (uploaded_parts.items) |value| {
-        allocator.free(value.etag);
+    // Pre-allocate one slot per part. Each task writes to its own index
+    // (part_number - 1), so no synchronization is needed.
+    const uploaded_parts = try allocator.alloc(?S3Client.UploadedPart, part_count);
+    defer allocator.free(uploaded_parts);
+    defer for (uploaded_parts) |slot| {
+        if (slot) |part| allocator.free(part.etag);
     };
+    @memset(uploaded_parts, null);
 
     // TODO: CreateMultipartUpload here
     var create_response = try client.createMultipartUpload(bucket, key, .{});
@@ -129,20 +130,31 @@ pub fn main(init: std.process.Init) !void {
             body,
             upload_id,
             @intCast(part_number),
-            &uploaded_parts,
+            uploaded_parts,
             start_t,
         });
     }
 
     try futures.await(io);
 
-    if (part_count != uploaded_parts.items.len) {
-        std.log.err("Uploaded parts don't match original part count! {d} != {d}", .{ uploaded_parts.items.len, part_count });
+    // Collect successful parts; log any slots that came back null (failed/cancelled).
+    var completed = std.ArrayList(S3Client.UploadedPart).empty;
+    defer completed.clearAndFree(allocator);
+    for (uploaded_parts, 1..) |slot, n| {
+        if (slot) |part| {
+            try completed.append(allocator, part);
+        } else {
+            std.log.err("Part {d} did not complete successfully", .{n});
+        }
+    }
+
+    if (completed.items.len != part_count) {
+        std.log.err("Uploaded parts don't match original part count! {d} != {d}", .{ completed.items.len, part_count });
     }
 
     var complete_multipart_resp = try client.completeMultipartUpload(bucket, key, .{
         .upload_id = upload_id,
-        .uploaded_parts = uploaded_parts.items,
+        .uploaded_parts = completed.items,
     });
     defer complete_multipart_resp.deinit();
 
@@ -160,7 +172,7 @@ fn uploadPart(
     body: []const u8,
     upload_id: []const u8,
     part_number: u32,
-    uploads: *std.ArrayList(S3Client.UploadedPart),
+    uploads: []?S3Client.UploadedPart,
     start_t: Io.Timestamp,
 ) !void {
     // We need to always return `Io.Cancelable.Canceled`. Otherwise `Group`
@@ -186,12 +198,12 @@ fn uploadPart(
         return Io.Cancelable.Canceled;
     }) catch return Io.Cancelable.Canceled;
 
-    // Add information about uploaded part to part array. This array is needed
-    // to complete the multipart upload successful.
-    uploads.append(allocator, .{
+    // Write to the pre-allocated slot for this part. Each task owns a unique
+    // index so no synchronization is needed.
+    uploads[part_number - 1] = .{
         .etag = etag,
         .part_number = part_number,
-    }) catch return Io.Cancelable.Canceled;
+    };
 
     std.log.debug("{d}ms: Successfully uploaded part {d}; etag: {s}", .{ start_t.untilNow(io, .awake).toMilliseconds(), part_number, etag });
 }

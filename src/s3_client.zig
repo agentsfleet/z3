@@ -49,12 +49,6 @@ pub const CreateMultipartUploadOptions = struct {
     content_type: ?[]const u8 = null,
 };
 
-pub const UploadPartOptions = struct {
-    request: RequestOptions = .{},
-    upload_id: []const u8,
-    part: u32,
-};
-
 /// Metadata of a completed part from a `MultipartUpload`.
 /// An array of all such parts is necessary to complete the whole multipart
 /// upload

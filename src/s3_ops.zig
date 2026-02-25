@@ -182,7 +182,7 @@ pub fn createMultipartUpload(
     options: S3Client.CreateMultipartUploadOptions,
 ) S3Client.RequestError!types.CreateMultipartUploadResult {
     var req = try request.prepareRequest(self, .POST, bucket, key, .{
-        .query = "uploads=1",
+        .query = "uploads=",
         .options = options.request,
         .metadata = options.metadata,
         .content_type = options.content_type,
@@ -191,8 +191,6 @@ pub fn createMultipartUpload(
 
     var response = try request.executeRequest(self, &req);
     defer response.deinit();
-
-    std.log.debug("Response body: {s}", .{response.body});
 
     return xml.parseCreateMultipartUpload(self.allocator, response.body);
 }
@@ -263,6 +261,7 @@ pub fn completeMultipartUpload(
         .query = query_string,
         .options = options.request,
         .body = body.items,
+        .content_type = "application/xml",
     });
     defer req.deinit();
 

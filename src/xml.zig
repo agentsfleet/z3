@@ -210,6 +210,23 @@ test "parseCreateMultipartUpload" {
     try testing.expectEqualStrings(result.upload_id, "VXBsb2FkIElEIGZvciA2aWWpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA");
 }
 
+test "parseCompleteMultipartUpload" {
+    const xml_data =
+        \\<?xml version="1.0" encoding="UTF-8"?>
+        \\<CompleteMultipartUploadResult>
+        \\   <Bucket>my_bucket</Bucket>
+        \\   <Key>object_key</Key>
+        \\   <ChecksumSHA256>jxQI5grOOHSfZQjolbPvz15pBrpsLhY+</ChecksumSHA256>
+        \\   <ETag>39ce861709bb90c113178402381e3267d0d262487126abb4</ETag>
+        \\</CompleteMultipartUploadResult>
+    ;
+    var result = try parseCompleteMultipartUpload(testing.allocator, xml_data);
+    defer result.deinit();
+    try testing.expectEqualStrings(result.bucket, "my_bucket");
+    try testing.expectEqualStrings(result.etag, "39ce861709bb90c113178402381e3267d0d262487126abb4");
+    try testing.expectEqualStrings(result.checksum_sha256.?, "jxQI5grOOHSfZQjolbPvz15pBrpsLhY+");
+}
+
 test "parseS3Error" {
     const xml_data = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>";
     var result = try parseS3Error(testing.allocator, xml_data);

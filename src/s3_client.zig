@@ -69,15 +69,12 @@ pub const UploadedPart = struct {
 
     /// Build XML string needed to complete the multipart upload
     pub fn buildXmlString(self: UploadedPart, allocator: std.mem.Allocator) ![]const u8 {
+        // TODO: add checks for used checksums and add them to XML string once
+        // enhanced checksum handling is implemented
         return std.fmt.allocPrint(
             allocator,
-            "<Part><ChecksumCRC32>{s}</ChecksumCRC32><ChecksumCRC32C>{s}</ChecksumCRC32C><ChecksumCRC64NVME>{s}</ChecksumCRC64NVME><ChecksumSHA1>{s}</ChecksumSHA1><ChecksumSHA256>{s}</ChecksumSHA256><ETag>{s}</ETag><PartNumber>{d}</PartNumber></Part>",
+            "<Part><ETag>{s}</ETag><PartNumber>{d}</PartNumber></Part>",
             .{
-                self.crc32_checksum orelse "",
-                self.crc32c_checksum orelse "",
-                self.crc64nvme_checksum orelse "",
-                self.sha1_checksum orelse "",
-                self.sha256_checksum orelse "",
                 self.etag,
                 self.part_number,
             },

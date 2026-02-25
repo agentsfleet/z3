@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) !void {
         \\mouth. Even the all-powerful Pointing has no control about the blind texts it is
     ;
 
-    const part_size: usize = 150; // Size of upload part in bytes
+    const part_size: usize = 1000; // Size of upload part in bytes
 
     const file_size = content.len;
 
@@ -84,7 +84,7 @@ pub fn main(init: std.process.Init) !void {
     var uploaded_parts = std.ArrayList(S3Client.UploadedPart).empty;
     defer uploaded_parts.clearAndFree(allocator);
     // You need to free all strings that are copied to the uploaded parts array
-    // E.g. the etag, or any checksum if used.
+    // E.g. the etag, or any checksum if used (see helper function below).
     defer for (uploaded_parts.items) |value| {
         allocator.free(value.etag);
     };
@@ -113,6 +113,8 @@ pub fn main(init: std.process.Init) !void {
     std.log.info("Starting upload process", .{});
 
     for (ranges.items, 1..) |r, part_number| {
+        // Here we need to add one to the end, because byte sclice end index is
+        // exclusive
         const body = content[r.start .. r.end + 1];
         futures.async(io, uploadPart, .{
             io,
@@ -176,11 +178,13 @@ fn uploadPart(
     ) catch return Io.Cancelable.Canceled;
     defer resp.deinit();
 
-    // Add information about uploaded part to part array. This array is needed
-    // to complete the multipart upload successful.
+    // Copy Etag to heap to outlive the helper function (needs to be freed later!)
     const etag = allocator.dupe(u8, resp.s3_head.etag orelse {
         return Io.Cancelable.Canceled;
     }) catch return Io.Cancelable.Canceled;
+
+    // Add information about uploaded part to part array. This array is needed
+    // to complete the multipart upload successful.
     uploads.append(allocator, .{
         .etag = etag,
         .part_number = part_number,

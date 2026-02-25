@@ -169,6 +169,92 @@ test "02d_getFile" {
     std.log.info("=== DONE 02d_getFile: {d} bytes ===\n", .{data.len});
 }
 
+// 2e. Put object multipart
+test "02e_putObjectMultipart" {
+    std.log.info("=== START 02e_putObjectMultipart ===", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+
+    const allocator = std.testing.allocator;
+
+    const part_size: usize = 1000; // Size of upload part in bytes
+
+    const file_size = test_content.len;
+
+    // Calculate parts count
+    var part_count = (file_size / part_size) + 1;
+    var last_part_size = file_size % part_size;
+    if (last_part_size == 0) {
+        last_part_size = part_size;
+        part_count -= 1;
+    }
+
+    // Create array of part ranges
+    var ranges = std.ArrayList(S3Client.ContentRange).empty;
+    defer ranges.clearAndFree(allocator);
+
+    // Add ranges to array
+    for (0..part_count) |part| {
+        const start = part * part_size;
+        const end = if (part == part_count - 1)
+            start + last_part_size - 1
+        else
+            (part + 1) * part_size - 1;
+        try ranges.append(allocator, .{ .start = start, .end = end });
+    }
+
+    var uploaded_parts = std.ArrayList(S3Client.UploadedPart).empty;
+    defer uploaded_parts.clearAndFree(allocator);
+    defer for (uploaded_parts.items) |value| {
+        allocator.free(value.etag);
+    };
+
+    std.log.info("  Calling createMultipartUpload", .{});
+    var create_response = try ctx.client.createMultipartUpload(test_bucket, test_key, .{});
+    defer create_response.deinit();
+
+    // Save upload ID to constant
+    const upload_id = create_response.upload_id;
+    if (upload_id.len == 0) return error.NoUploadId;
+
+    std.log.info("  Got upload ID: {s}", .{upload_id});
+
+    for (ranges.items, 1..) |r, part_number| {
+        const body = test_content[r.start .. r.end + 1];
+
+        std.log.info("  Uploading part {d}", .{part_number});
+        var part_response = try ctx.client.uploadPart(
+            test_bucket,
+            test_key,
+            body,
+            upload_id,
+            @intCast(part_number),
+            .{},
+        );
+        defer part_response.deinit();
+
+        const etag = try allocator.dupe(u8, part_response.s3_head.etag orelse {
+            return error.NoEtagFound;
+        });
+
+        try uploaded_parts.append(allocator, .{
+            .etag = etag,
+            .part_number = @intCast(part_number),
+        });
+
+        std.log.info("  Uploaded part {d} with Etag {s}", .{ part_number, etag });
+    }
+
+    var complete_multipart_resp = try ctx.client.completeMultipartUpload(test_bucket, test_key, .{
+        .upload_id = upload_id,
+        .uploaded_parts = uploaded_parts.items,
+    });
+    defer complete_multipart_resp.deinit();
+
+    std.log.info("=== DONE 02e_putObjectMultipart: Object Etag: {s} ===\n", .{complete_multipart_resp.etag});
+}
+
 // 3. List buckets
 test "03_listBuckets" {
     std.log.info("=== START 03_listBuckets ===", .{});

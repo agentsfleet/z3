@@ -253,14 +253,11 @@ pub fn completeMultipartUpload(
 
     for (uploads_sorted) |part| {
         const xml_str = try part.buildXmlString(self.allocator);
-        std.debug.print("{s}\n", .{xml_str});
         defer self.allocator.free(xml_str);
         try body.appendSlice(self.allocator, xml_str);
     }
 
     try body.appendSlice(self.allocator, "</CompleteMultipartUpload>");
-
-    // std.debug.print("{s}\n", .{body.items});
 
     var req = try request.prepareRequest(self, .POST, bucket, key, .{
         .query = query_string,
@@ -271,9 +268,6 @@ pub fn completeMultipartUpload(
 
     var resp = try request.executeRequest(self, &req);
     defer resp.deinit();
-
-    std.log.debug("Status: {t}", .{resp.http_head.status});
-    std.debug.print("{s}\n", .{resp.body});
 
     return xml.parseCompleteMultipartUpload(self.allocator, resp.body);
 }

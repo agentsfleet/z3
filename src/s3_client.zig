@@ -31,6 +31,10 @@ pub const InitOptions = struct {
 
 pub const RequestOptions = struct {
     max_body_size: usize = 100 * 1024 * 1024,
+    /// Max attempts to retry an unseccessful request
+    max_attempts: usize = 1,
+    /// Timeout to sleep in milliseconds before retrying to execute the request
+    retry_timeout: ?i64 = null,
 };
 
 pub const Metadata = struct {
@@ -143,6 +147,8 @@ pub const Error = error{
 };
 
 pub const RequestError = Error || Allocator.Error || error{
+    UnknownScheme,
+    UriMissingHost,
     InvalidUri,
     ConnectionFailed,
     SendFailed,
@@ -154,6 +160,7 @@ pub const RequestError = Error || Allocator.Error || error{
     StringToSignTooLong,
     CopyResponseHeadFailed,
     ParseResponseHeadFailed,
+    TooManyRetries,
 };
 
 pub const ObjectStream = struct {

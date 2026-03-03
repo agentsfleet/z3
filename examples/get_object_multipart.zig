@@ -39,7 +39,7 @@ pub fn main(init: std.process.Init) !void {
         .secret_access_key = secret_key,
         .region = region,
         .endpoint = endpoint,
-        .virtual_host_style = false,
+        .virtual_host_style = true,
     }, .{ .io = io });
     defer client.deinit();
 
@@ -56,7 +56,10 @@ pub fn main(init: std.process.Init) !void {
     const part_size: usize = 50; // Size of download part in bytes
 
     // Put the content as object to your S3 storage
-    var put_resp = try client.putObject(bucket, key, content, .{});
+    var put_resp = try client.putObject(bucket, key, content, .{ .request = .{
+        .max_attempts = 5,
+        .retry_timeout = 500,
+    } });
     defer put_resp.deinit();
 
     std.log.info("Put object {s} to bucket {s}", .{ key, bucket });

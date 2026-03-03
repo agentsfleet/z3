@@ -11,6 +11,8 @@ pub const UnifiedRequest = struct {
     content_length: usize,
     max_body_size: usize,
     is_bodiless: bool,
+    max_attempts: usize,
+    retry_timeout: ?i64,
 
     pub fn deinit(self: *UnifiedRequest) void {
         self.allocator.free(self.url);

@@ -157,15 +157,30 @@ pub fn prepareRequest(
         .content_length = body_len,
         .max_body_size = params.options.max_body_size,
         .is_bodiless = body_len == 0 and method != .PUT and params.copy_source == null,
+        .max_attempts = params.options.max_attempts,
+        .retry_timeout = params.options.retry_timeout,
     };
 }
 
 pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Client.Response {
     const uri = std.Uri.parse(req.url) catch return error.InvalidUri;
 
-    var http_req = self.http_client.request(req.http_method, uri, .{
-        .extra_headers = req.headers,
-    }) catch return error.ConnectionFailed;
+    var attempt: usize = 1;
+    var http_req: http.Client.Request = while (attempt <= req.max_attempts) : (attempt += 1) {
+        const request = self.http_client.request(req.http_method, uri, .{
+            .extra_headers = req.headers,
+        }) catch {
+            if (attempt == req.max_attempts) {
+                return error.ConnectionFailed;
+            } else {
+                if (req.retry_timeout) |ms| {
+                    self.http_client.io.sleep(.fromMilliseconds(ms), .awake) catch {};
+                }
+                continue;
+            }
+        };
+        break request;
+    } else return error.TooManyRetries;
     defer http_req.deinit();
 
     if (req.is_bodiless) {

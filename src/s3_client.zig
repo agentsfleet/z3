@@ -147,8 +147,6 @@ pub const Error = error{
 };
 
 pub const RequestError = Error || Allocator.Error || error{
-    UnknownScheme,
-    UriMissingHost,
     InvalidUri,
     ConnectionFailed,
     SendFailed,

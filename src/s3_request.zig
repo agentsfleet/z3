@@ -180,7 +180,7 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
             }
         };
         break request;
-    } else return error.TooManyRetries;
+    } else unreachable;
     defer http_req.deinit();
 
     if (req.is_bodiless) {

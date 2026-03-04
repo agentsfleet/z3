@@ -165,7 +165,7 @@ pub fn prepareRequest(
 pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Client.Response {
     const uri = std.Uri.parse(req.url) catch return error.InvalidUri;
 
-    if (req.max_attempts <= 0) @panic("Max attempts set to 0 or less, can't execute any requests. At least, set it to 1");
+    if (req.max_attempts <= 0) return error.InvalidMaxAttempts;
 
     var attempt: usize = 1;
     var http_req: http.Client.Request = while (attempt <= req.max_attempts) : (attempt += 1) {
@@ -177,10 +177,10 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
             } else {
                 var rand_int: [1]u8 = undefined;
                 self.http_client.io.random(&rand_int);
-                const interval: i64 = if (rand_int[0] > 0 and rand_int[0] % 2 == 0)
-                    req.initial_retry_time + rand_int[0]
+                const interval: i64 = if (rand_int[0] < req.initial_retry_time or (rand_int[0] > req.initial_retry_time and rand_int[0] % 2 != 0))
+                    req.initial_retry_time - rand_int[0]
                 else
-                    req.initial_retry_time - rand_int[0];
+                    req.initial_retry_time + rand_int[0];
                 self.http_client.io.sleep(.fromMilliseconds(interval), .awake) catch {};
                 continue;
             }

@@ -58,7 +58,7 @@ pub fn main(init: std.process.Init) !void {
     // Put the content as object to your S3 storage
     var put_resp = try client.putObject(bucket, key, content, .{ .request = .{
         .max_attempts = 5,
-        .retry_timeout = 500,
+        .initial_retry_time = 500,
     } });
     defer put_resp.deinit();
 

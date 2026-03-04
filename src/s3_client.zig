@@ -34,7 +34,7 @@ pub const RequestOptions = struct {
     /// Max attempts to retry an unseccessful request
     max_attempts: usize = 3,
     /// Timeout to sleep in milliseconds before retrying to execute the request
-    retry_timeout: ?i64 = null,
+    initial_retry_time: i64 = 100,
 };
 
 pub const Metadata = struct {

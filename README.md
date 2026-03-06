@@ -143,14 +143,13 @@ if (first.is_truncated and first.next_continuation_token != null) {
 }
 ```
 
-## Current Limitations & Roadmap
+## Current Limitations
 
-`z3` is currently a work-in-progress. The following features are not yet implemented:
+`z3` is currently a work-in-progress. The following features are not implemented, and may not be unless requested:
 
 - **Streaming Upload Signatures**: `putFile` requires a seekable file to compute content length and SHA-256; chunked signing is not yet implemented.
 - **Presigned URLs**: Support for generating temporary GET/PUT URLs.
 - **Advanced Authentication**: Support for IAM roles, environment variables, and AWS profile-based credential discovery.
-- **Automatic Retries**: Built-in exponential backoff for transient network or S3 errors.
 
 ## Running Examples
 

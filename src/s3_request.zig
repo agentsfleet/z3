@@ -181,7 +181,6 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
                     req.initial_retry_time - rand_int[0]
                 else
                     req.initial_retry_time + rand_int[0];
-                std.log.debug("{d}", .{interval});
                 self.http_client.io.sleep(.fromMilliseconds(@intCast(@abs(interval))), .awake) catch {};
                 continue;
             }

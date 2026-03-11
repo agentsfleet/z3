@@ -2,7 +2,7 @@
     .name = .z3,
     .version = "0.3.0",
     .fingerprint = 0x2bd9e295707e6e37,
-    .minimum_zig_version = "0.16.0-dev.2676+4e2cec265",
+    .minimum_zig_version = "0.16.0-dev.2736+3b515fbed",
     .dependencies = .{},
     .paths = .{
         "build.zig",

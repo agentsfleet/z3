@@ -56,19 +56,21 @@ pub fn main(init: std.process.Init) !void {
     const part_size: usize = 50; // Size of download part in bytes
 
     // Put the content as object to your S3 storage
-    var put_resp = try client.putObject(bucket, key, content, .{ .request = .{
-        .max_attempts = 5,
-        .initial_retry_time = 50,
-    } });
+    var put_resp = try client.putObject(bucket, key, content, .{
+        .request = .{
+            .max_attempts = 5,
+            .initial_retry_time = 50,
+        },
+    });
     defer put_resp.deinit();
 
     std.log.info("Put object {s} to bucket {s}", .{ key, bucket });
 
     // Be sure its there
-    var head_resp = try client.headObject(bucket, key);
+    var head_resp = try client.headObject(bucket, key, .{});
     defer head_resp.deinit();
 
-    std.log.info("Found object at {s}/{s}", .{ bucket, key });
+    std.log.info("HeadObject status: {}", .{head_resp.http_head.status});
 
     std.log.info("Start multipart download", .{});
 

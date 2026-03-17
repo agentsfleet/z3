@@ -145,6 +145,15 @@ pub fn prepareRequest(
         try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Connection"), .value = try self.allocator.dupe(u8, "close") });
     }
 
+    if (params.options.custom_header) |header_list| {
+        for (header_list) |header| {
+            try temp_headers.append(self.allocator, .{
+                .name = try self.allocator.dupe(u8, header.name),
+                .value = try self.allocator.dupe(u8, header.value),
+            });
+        }
+    }
+
     const owned_headers = try temp_headers.toOwnedSlice(self.allocator);
     temp_headers_moved = true;
 

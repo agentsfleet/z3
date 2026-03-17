@@ -35,6 +35,8 @@ pub const RequestOptions = struct {
     max_attempts: usize = 3,
     /// Timeout to sleep in milliseconds before retrying to execute the request
     initial_retry_time: i64 = 100,
+    /// Custom headers which are appended to the request
+    custom_header: ?[]const http.Header = null,
 };
 
 pub const Metadata = struct {

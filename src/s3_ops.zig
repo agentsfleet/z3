@@ -339,8 +339,8 @@ pub fn listObjects(self: *S3Client, bucket: []const u8, options: ListObjectsOpti
 }
 
 /// Create a new bucket
-pub fn createBucket(self: *S3Client, bucket: []const u8) S3Client.RequestError!S3Client.Response {
-    var req = try request.prepareRequest(self, .PUT, bucket, null, .{ .options = .{ .max_body_size = 64 * 1024 } });
+pub fn createBucket(self: *S3Client, bucket: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
+    var req = try request.prepareRequest(self, .PUT, bucket, null, .{ .options = options });
     defer req.deinit();
 
     return request.executeRequest(self, &req);

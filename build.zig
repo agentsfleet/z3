@@ -27,7 +27,12 @@ pub fn build(b: *std.Build) void {
     inline for (examples) |ex| {
         const example_exe = b.addExecutable(.{
             .name = ex[0],
-            .root_module = b.createModule(.{ .root_source_file = b.path(ex[1]), .target = target, .optimize = optimize, .imports = &.{.{ .name = "s3", .module = s3_mod }} }),
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(ex[1]),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{.{ .name = "s3", .module = s3_mod }},
+            }),
         });
 
         b.installArtifact(example_exe);

@@ -57,7 +57,7 @@ test "01_createBucket" {
     defer ctx.deinit();
     std.log.info("  calling createBucket...", .{});
 
-    var response = try ctx.client.createBucket(test_bucket);
+    var response = try ctx.client.createBucket(test_bucket, .{});
     defer response.deinit();
     std.log.info("  Got response: {} body_len={d}\n", .{ response.http_head.status, response.body.len });
 
@@ -344,7 +344,7 @@ test "04c_concurrentPutGet" {
     var ctx = try TestContext.init();
     defer ctx.deinit();
 
-    var bucket_resp = try ctx.client.createBucket(test_bucket);
+    var bucket_resp = try ctx.client.createBucket(test_bucket, .{});
     defer bucket_resp.deinit();
     try std.testing.expect(bucket_resp.http_head.status == .ok or bucket_resp.http_head.status == .conflict);
 

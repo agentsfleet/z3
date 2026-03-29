@@ -149,6 +149,7 @@ pub const Error = error{
 };
 
 pub const RequestError = Error || Allocator.Error || error{
+    ConflictingCustomHeader,
     InvalidMaxAttempts,
     InvalidUri,
     ConnectionFailed,

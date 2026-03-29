@@ -7,6 +7,62 @@ const url = @import("s3_url.zig");
 const request_types = @import("s3_request_types.zig");
 const S3Client = @import("s3_client.zig").S3Client;
 
+fn containsHeaderName(headers: []const signing.HeaderToSign, lower_name: []const u8) bool {
+    for (headers) |header| {
+        if (std.mem.eql(u8, header.name, lower_name)) return true;
+    }
+    return false;
+}
+
+fn conflictsWithGeneratedHeader(
+    method: http.Method,
+    body_len: usize,
+    params: RequestParams,
+    lower_name: []const u8,
+) bool {
+    if (std.mem.eql(u8, lower_name, "authorization") or std.mem.eql(u8, lower_name, "accept-encoding")) {
+        return true;
+    }
+
+    if (std.mem.eql(u8, lower_name, "content-type")) {
+        return params.content_type != null or (method == .PUT and body_len > 0);
+    }
+
+    if (std.mem.eql(u8, lower_name, "range")) {
+        return params.range != null;
+    }
+
+    if (method == .DELETE) {
+        return std.mem.eql(u8, lower_name, "content-length") or std.mem.eql(u8, lower_name, "connection");
+    }
+
+    return false;
+}
+
+fn makeCanonicalCustomHeader(
+    self: *S3Client,
+    method: http.Method,
+    body_len: usize,
+    params: RequestParams,
+    headers_to_sign: []const signing.HeaderToSign,
+    header: http.Header,
+) !http.Header {
+    const lower_name = try internal.toLowerAlloc(self.allocator, header.name);
+    errdefer self.allocator.free(lower_name);
+
+    if (containsHeaderName(headers_to_sign, lower_name) or conflictsWithGeneratedHeader(method, body_len, params, lower_name)) {
+        return error.ConflictingCustomHeader;
+    }
+
+    const value_dupe = try self.allocator.dupe(u8, header.value);
+    errdefer self.allocator.free(value_dupe);
+
+    return .{
+        .name = lower_name,
+        .value = value_dupe,
+    };
+}
+
 const RequestParams = struct {
     query: ?[]const u8 = null,
     body: []const u8 = "",
@@ -74,6 +130,32 @@ pub fn prepareRequest(
             const lower_name = try internal.toLowerAlloc(self.allocator, raw_name);
             try metadata_sign_names.append(self.allocator, lower_name);
             try headers_to_sign.append(self.allocator, .{ .name = lower_name, .value = item.value });
+        }
+    }
+
+    var custom_headers = std.ArrayListUnmanaged(http.Header){};
+    var custom_headers_moved = false;
+    defer {
+        if (!custom_headers_moved) {
+            for (custom_headers.items) |header| {
+                self.allocator.free(header.name);
+                self.allocator.free(header.value);
+            }
+            custom_headers.deinit(self.allocator);
+        }
+    }
+    if (params.options.custom_header) |header_list| {
+        for (header_list) |header| {
+            const custom_header = try makeCanonicalCustomHeader(self, method, body_len, params, headers_to_sign.items, header);
+            var custom_header_moved = false;
+            errdefer if (!custom_header_moved) {
+                self.allocator.free(custom_header.name);
+                self.allocator.free(custom_header.value);
+            };
+
+            try headers_to_sign.append(self.allocator, .{ .name = custom_header.name, .value = custom_header.value });
+            try custom_headers.append(self.allocator, custom_header);
+            custom_header_moved = true;
         }
     }
 
@@ -145,13 +227,12 @@ pub fn prepareRequest(
         try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Connection"), .value = try self.allocator.dupe(u8, "close") });
     }
 
-    if (params.options.custom_header) |header_list| {
-        for (header_list) |header| {
-            try temp_headers.append(self.allocator, .{
-                .name = try self.allocator.dupe(u8, header.name),
-                .value = try self.allocator.dupe(u8, header.value),
-            });
-        }
+    // Canonicalize and validate custom headers before signing so SigV4 covers
+    // them and the client does not emit conflicting duplicates.
+    if (custom_headers.items.len > 0) {
+        try temp_headers.appendSlice(self.allocator, custom_headers.items);
+        custom_headers.deinit(self.allocator);
+        custom_headers_moved = true;
     }
 
     const owned_headers = try temp_headers.toOwnedSlice(self.allocator);
@@ -363,6 +444,70 @@ test "prepareRequest signs metadata headers" {
 
     try std.testing.expect(saw_meta);
     try std.testing.expect(saw_signed);
+}
+
+test "prepareRequest signs custom headers" {
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    const custom_headers = [_]http.Header{
+        .{ .name = "X-Amz-Checksum-Mode", .value = "ENABLED" },
+    };
+
+    var req = try prepareRequest(&client, .GET, "bucket", "key", .{
+        .options = .{ .custom_header = &custom_headers },
+    });
+    defer req.deinit();
+
+    var saw_custom = false;
+    var saw_signed = false;
+    for (req.headers) |header| {
+        if (std.mem.eql(u8, header.name, "x-amz-checksum-mode") and std.mem.eql(u8, header.value, "ENABLED")) {
+            saw_custom = true;
+        }
+        if (std.mem.eql(u8, header.name, "Authorization")) {
+            if (std.mem.indexOf(u8, header.value, "SignedHeaders=")) |idx| {
+                const tail = header.value[idx..];
+                if (std.mem.indexOf(u8, tail, "x-amz-checksum-mode") != null) {
+                    saw_signed = true;
+                }
+            }
+        }
+    }
+
+    try std.testing.expect(saw_custom);
+    try std.testing.expect(saw_signed);
+}
+
+test "prepareRequest rejects conflicting custom headers" {
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    const custom_headers = [_]http.Header{
+        .{ .name = "Authorization", .value = "oops" },
+    };
+
+    try std.testing.expectError(error.ConflictingCustomHeader, prepareRequest(&client, .GET, "bucket", "key", .{
+        .options = .{ .custom_header = &custom_headers },
+    }));
 }
 
 test "Parse custom S3 header" {

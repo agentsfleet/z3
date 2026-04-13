@@ -55,7 +55,7 @@ pub fn parseS3Error(allocator: Allocator, body: []const u8) !types.S3Error {
 
 /// Parse ListObjectsV2 response
 pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjectsResult {
-    var objects = std.ArrayListUnmanaged(types.ObjectInfo){};
+    var objects = std.ArrayListUnmanaged(types.ObjectInfo).empty;
     errdefer {
         for (objects.items) |*obj| obj.deinit();
         objects.deinit(allocator);
@@ -109,7 +109,7 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
 
 /// Parse ListBuckets response
 pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucketsResult {
-    var buckets = std.ArrayListUnmanaged(types.BucketInfo){};
+    var buckets = std.ArrayListUnmanaged(types.BucketInfo).empty;
     errdefer {
         for (buckets.items) |*b| b.deinit();
         buckets.deinit(allocator);

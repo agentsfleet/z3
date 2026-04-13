@@ -2,7 +2,9 @@
 
 `z3` is a lightweight, high-performance, and asynchronous S3 client for Zig. It is built directly on `std.http.Client` and utilizes the `std.Io` interface for efficient parallel operations. It has been primarily tested with Cloudflare R2 but is designed to work with any S3-compatible service.
 
-## Expect breaking changes until zig 0.16 is released
+## Toolchain
+
+This project currently targets `0.16.0-dev.3146+0606af509`.
 
 ## Features
 
@@ -17,7 +19,7 @@
 
 ## Prerequisites
 
-- **Zig 0.16+**: This library uses modern Zig features and the latest `std.http` and `std.Io` APIs.
+- **Zig `0.16.0-dev.3146+0606af509` or newer compatible builds**: This library uses modern Zig features and the latest `std.http` and `std.Io` APIs.
 
 ## Installation
 

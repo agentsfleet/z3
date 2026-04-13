@@ -107,7 +107,7 @@ pub fn prepareRequest(
         break :blk &content_hash_buf;
     };
 
-    var headers_to_sign = std.ArrayListUnmanaged(signing.HeaderToSign){};
+    var headers_to_sign = std.ArrayListUnmanaged(signing.HeaderToSign).empty;
     defer headers_to_sign.deinit(self.allocator);
     try headers_to_sign.append(self.allocator, .{ .name = "host", .value = host });
     try headers_to_sign.append(self.allocator, .{ .name = "x-amz-content-sha256", .value = content_hash });
@@ -116,7 +116,7 @@ pub fn prepareRequest(
         try headers_to_sign.append(self.allocator, .{ .name = "x-amz-copy-source", .value = src });
     }
 
-    var metadata_sign_names = std.ArrayListUnmanaged([]u8){};
+    var metadata_sign_names = std.ArrayListUnmanaged([]u8).empty;
     defer {
         for (metadata_sign_names.items) |name| {
             self.allocator.free(name);
@@ -133,7 +133,7 @@ pub fn prepareRequest(
         }
     }
 
-    var custom_headers = std.ArrayListUnmanaged(http.Header){};
+    var custom_headers = std.ArrayListUnmanaged(http.Header).empty;
     var custom_headers_moved = false;
     defer {
         if (!custom_headers_moved) {
@@ -169,7 +169,7 @@ pub fn prepareRequest(
     );
     errdefer self.allocator.free(auth_header);
 
-    var temp_headers = std.ArrayListUnmanaged(http.Header){};
+    var temp_headers = std.ArrayListUnmanaged(http.Header).empty;
     var temp_headers_moved = false;
     defer {
         if (!temp_headers_moved) {

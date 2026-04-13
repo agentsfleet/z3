@@ -391,7 +391,7 @@ const QueryParam = struct {
 };
 
 fn buildListObjectsQuery(self: *S3Client, options: ListObjectsOptions) ![]u8 {
-    var params = std.ArrayListUnmanaged(QueryParam){};
+    var params = std.ArrayListUnmanaged(QueryParam).empty;
     errdefer {
         for (params.items) |item| {
             self.allocator.free(item.key);
@@ -437,7 +437,7 @@ fn buildListObjectsQuery(self: *S3Client, options: ListObjectsOptions) ![]u8 {
         }
     }.lessThan);
 
-    var query = std.ArrayListUnmanaged(u8){};
+    var query = std.ArrayListUnmanaged(u8).empty;
     errdefer query.deinit(self.allocator);
 
     for (params.items, 0..) |item, i| {

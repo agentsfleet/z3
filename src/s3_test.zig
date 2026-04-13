@@ -10,7 +10,7 @@ const test_meta_key = "test-object-meta.txt";
 const test_meta_content = "Hello with metadata";
 
 const TestContext = struct {
-    gpa: std.heap.GeneralPurposeAllocator(.{}),
+    gpa: std.heap.DebugAllocator(.{}),
     client: S3Client,
 
     pub fn init() !*TestContext {
@@ -28,7 +28,7 @@ const TestContext = struct {
         };
 
         const ctx = try std.testing.allocator.create(TestContext);
-        ctx.gpa = .{};
+        ctx.gpa = .init;
         const allocator = ctx.gpa.allocator();
 
         std.log.info("  IO initialized", .{});

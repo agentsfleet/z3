@@ -4,7 +4,7 @@
 
 ## Toolchain
 
-This project currently targets `0.16.0-dev.3146+0606af509`.
+This project targets `0.16.0`.
 
 ## Features
 
@@ -19,7 +19,7 @@ This project currently targets `0.16.0-dev.3146+0606af509`.
 
 ## Prerequisites
 
-- **Zig `0.16.0-dev.3146+0606af509` or newer compatible builds**: This library uses modern Zig features and the latest `std.http` and `std.Io` APIs.
+- **Zig `0.16.0`**: This library uses modern Zig features and the latest stable `std.http` and `std.Io` APIs.
 
 ## Installation
 

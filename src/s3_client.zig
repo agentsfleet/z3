@@ -279,6 +279,7 @@ pub const ListObjectsOptions = ops.ListObjectsOptions;
 pub const listObjects = ops.listObjects;
 pub const createBucket = ops.createBucket;
 pub const deleteBucket = ops.deleteBucket;
+pub const headBucket = ops.headBucket;
 pub const copyObject = ops.copyObject;
 pub const listBuckets = ops.listBuckets;
 pub const createMultipartUpload = ops.createMultipartUpload;

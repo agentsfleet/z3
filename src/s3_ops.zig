@@ -307,6 +307,15 @@ pub fn headObject(self: *S3Client, bucket: []const u8, key: []const u8, options:
     return request.executeRequest(self, &req);
 }
 
+/// HeadBucket API Call: get basic information about Bucket, in the first place if the
+/// bucket exists at all.
+pub fn headBucket(self: *S3Client, bucket: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
+    var req = try request.prepareRequest(self, .HEAD, bucket, null, .{ .options = options });
+    defer req.deinit();
+
+    return request.executeRequest(self, &req);
+}
+
 /// List objects in bucket
 pub const ListObjectsOptions = struct {
     prefix: ?[]const u8 = null,

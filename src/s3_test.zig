@@ -66,6 +66,22 @@ test "01_createBucket" {
     std.log.info("=== DONE 01_createBucket: {} ===\n", .{response.http_head.status});
 }
 
+// 1b. Check if bucket exists
+test "01b_headBucket" {
+    std.log.info("=== START 01b_headBucket ===", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+    std.log.info("  calling headBucket...", .{});
+
+    var response = try ctx.client.headBucket(test_bucket, .{});
+    defer response.deinit();
+    std.log.info("  Got response: {}\n", .{response.http_head.status});
+
+    try std.testing.expect(response.http_head.status == .ok);
+    std.log.info("=== DONE 01b_headBucket: {} ===\n", .{response.http_head.status});
+}
+
 // 2. Put object
 test "02_putObject" {
     std.log.info("=== START 02_putObject ===", .{});

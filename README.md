@@ -105,6 +105,7 @@ pub fn main(init: std.process.Init) !void {
 
 ### Bucket Operations
 - `listBuckets()`
+- `headBucket(bucket)`
 - `createBucket(bucket)`
 - `deleteBucket(bucket)`
 

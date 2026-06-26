@@ -5,14 +5,14 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // S3 client library module (no external dependencies - uses std.http.Client)
-    const s3_mod = b.addModule("s3", .{
+    _ = b.addModule("s3", .{
         .root_source_file = b.path("src/s3_client.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     // Library module (exports S3Client)
-    _ = b.addModule("zigasync", .{
+    const s3_mod = b.addModule("s3", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,

@@ -38,6 +38,7 @@ pub const ObjectInfo = struct {
 /// Result of listing objects
 pub const ListObjectsResult = struct {
     objects: []ObjectInfo,
+    common_prefixes: []const []const u8,
     /// True if there are more results (pagination)
     is_truncated: bool,
     /// Token for next page (if truncated)
@@ -47,6 +48,9 @@ pub const ListObjectsResult = struct {
     pub fn deinit(self: *ListObjectsResult) void {
         for (self.objects) |*obj| {
             obj.deinit();
+        }
+        for (self.common_prefixes) |prefix| {
+            self.allocator.free(prefix);
         }
         self.allocator.free(self.objects);
         if (self.next_continuation_token) |token| {

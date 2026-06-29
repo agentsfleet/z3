@@ -94,6 +94,23 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
         });
     }
 
+    var prefixes: std.ArrayList([]const u8) = .empty;
+
+    var prefix_it = std.mem.splitSequence(u8, body, "<CommonPrefixes>");
+    _ = prefix_it.first();
+
+    while (prefix_it.next()) |obj_xml| {
+        var chunk = obj_xml;
+        if (std.mem.indexOf(u8, obj_xml, "</CommonPrefixes>")) |end_idx| {
+            chunk = obj_xml[0..end_idx];
+        }
+
+        const prefix = try extractTagDupe(allocator, chunk, "Prefix");
+        errdefer allocator.free(prefix);
+
+        try prefixes.append(allocator, prefix);
+    }
+
     var is_truncated = false;
     if (extractTag(body, "IsTruncated")) |trunc| {
         is_truncated = std.mem.eql(u8, trunc, "true");
@@ -101,6 +118,7 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
 
     return types.ListObjectsResult{
         .objects = try objects.toOwnedSlice(allocator),
+        .common_prefixes = try prefixes.toOwnedSlice(allocator),
         .is_truncated = is_truncated,
         .next_continuation_token = try extractTagOptionalDupe(allocator, body, "NextContinuationToken"),
         .allocator = allocator,

@@ -52,6 +52,7 @@ pub const ListObjectsResult = struct {
         for (self.common_prefixes) |prefix| {
             self.allocator.free(prefix);
         }
+        self.allocator.free(self.common_prefixes);
         self.allocator.free(self.objects);
         if (self.next_continuation_token) |token| {
             self.allocator.free(token);

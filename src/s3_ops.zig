@@ -314,6 +314,10 @@ pub fn headBucket(self: *S3Client, bucket: []const u8, options: S3Client.Request
 /// List objects in bucket
 pub const ListObjectsOptions = struct {
     prefix: ?[]const u8 = null,
+    /// Delimiter which is used to group keys. The sinlge objects of the grouped keys
+    /// are not shown in the object list. This can be used e.g. to simulate kind
+    /// of subdirectories.
+    common_prefix_delimiter: ?[]const u8 = null,
     continuation_token: ?[]const u8 = null,
     max_keys: ?u32 = null,
 };
@@ -409,6 +413,13 @@ fn buildListObjectsQuery(self: *S3Client, options: ListObjectsOptions) ![]u8 {
         try params.append(self.allocator, .{
             .key = try internal.encodeQueryValue(self.allocator, "prefix"),
             .value = try internal.encodeQueryValue(self.allocator, p),
+        });
+    }
+
+    if (options.common_prefix_delimiter) |d| {
+        try params.append(self.allocator, .{
+            .key = try internal.encodeQueryValue(self.allocator, "delimiter"),
+            .value = try internal.encodeQueryValue(self.allocator, d),
         });
     }
 

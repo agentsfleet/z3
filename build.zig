@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) void {
         .{ "example-get-multipart", "examples/get_object_multipart.zig" },
         .{ "example-put-multipart", "examples/put_object_multipart.zig" },
         .{ "example-put-fetch-async", "examples/put_fetch_async.zig" },
+        .{ "example-track-progress", "examples/track_progress.zig" },
     };
 
     inline for (examples) |ex| {

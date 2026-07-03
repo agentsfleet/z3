@@ -319,7 +319,9 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         std.debug.assert(req.body.len == req.content_length);
         http_req.transfer_encoding = .{ .content_length = req.content_length };
         var body_writer = http_req.sendBody(&.{}) catch return error.SendFailed;
-        body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
+        var writer_counter: CountingWriter = .init(&body_writer.writer, &.{});
+        writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
+        // body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
         body_writer.end() catch return error.WriteFailed;
         http_req.connection.?.flush() catch return error.FlushFailed;
     }
@@ -348,6 +350,76 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         .s3_head = try .parse(self.allocator, &head_iter),
     };
 }
+
+pub const CountingWriter = struct {
+    inner: *std.Io.Writer,
+    pos: u64 = 0,
+    interface: std.Io.Writer,
+
+    pub fn init(inner: *std.Io.Writer, buffer: []u8) CountingWriter {
+        return .{
+            .inner = inner,
+            .interface = .{
+                .vtable = &.{
+                    .drain = drainFn,
+                },
+                .buffer = buffer,
+                .end = 0,
+            },
+        };
+    }
+
+    fn drainFn(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        const self: *CountingWriter = @fieldParentPtr("interface", w);
+        const n = try self.inner.vtable.drain(self.inner, data, splat);
+        self.pos += n;
+        std.debug.print("{d}\n", .{self.logicalPos()});
+        return n;
+    }
+
+    pub fn logicalPos(self: *const CountingWriter) u64 {
+        return self.pos;
+    }
+};
+
+pub const CountingReader = struct {
+    inner: *std.Io.Reader,
+    pos: u64 = 0,
+    interface: std.Io.Reader,
+
+    pub fn init(inner: *std.Io.Reader, buffer: []u8) CountingReader {
+        return .{
+            .inner = inner,
+            .interface = .{
+                .vtable = &.{
+                    .stream = streamFn,
+                    .discard = discardFn,
+                },
+                .buffer = buffer,
+                .seek = 0,
+                .end = 0,
+            },
+        };
+    }
+
+    fn streamFn(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+        const self: *CountingReader = @fieldParentPtr("interface", r);
+        const n = try self.inner.stream(w, limit);
+        self.pos += n;
+        return n;
+    }
+
+    fn discardFn(r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!usize {
+        const self: *CountingReader = @fieldParentPtr("interface", r);
+        const n = try self.inner.discard(limit);
+        self.pos += n;
+        return n;
+    }
+
+    pub fn logicalPos(self: *const CountingReader) u64 {
+        return self.pos - self.interface.bufferedLen();
+    }
+};
 
 pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequest, reader: *Io.Reader) !S3Client.Response {
     const uri = std.Uri.parse(req.url) catch return error.InvalidUri;

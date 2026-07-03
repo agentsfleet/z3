@@ -7,8 +7,16 @@ const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const ops = @import("s3_ops.zig");
 const request_types = @import("s3_request_types.zig");
+const root = @import("root");
 
 pub const S3Client = @This();
+
+pub const CustomStreams = struct {
+    custom_stream_writer: ?type = null,
+    custom_stream_reader: ?type = null,
+};
+
+pub const custom_streams: CustomStreams = if (@hasDecl(root, "custom_streams")) root.custom_streams else .{};
 
 pub const Config = struct {
     access_key_id: []const u8,

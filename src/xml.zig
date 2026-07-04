@@ -10,7 +10,7 @@ fn extractTag(content: []const u8, tag: []const u8) ?[]const u8 {
     var buf: [128]u8 = undefined;
     const s_start = std.fmt.bufPrint(&buf, "<{s}", .{tag}) catch return null;
 
-    const s_idx = std.mem.indexOf(u8, content, s_start) orelse return null;
+    const s_idx = std.mem.find(u8, content, s_start) orelse return null;
     // Ensure we matched the full tag name and not a prefix (e.g. <Key matched in <KeyCount>)
     if (s_idx + s_start.len < content.len) {
         const next_char = content[s_idx + s_start.len];
@@ -20,10 +20,10 @@ fn extractTag(content: []const u8, tag: []const u8) ?[]const u8 {
         }
     }
 
-    const open_tag_end = std.mem.indexOfPos(u8, content, s_idx, ">") orelse return null;
+    const open_tag_end = std.mem.findPos(u8, content, s_idx, ">") orelse return null;
 
     const e_tag = std.fmt.bufPrint(&buf, "</{s}>", .{tag}) catch return null;
-    const e_idx = std.mem.indexOfPos(u8, content, open_tag_end, e_tag) orelse return null;
+    const e_idx = std.mem.findPos(u8, content, open_tag_end, e_tag) orelse return null;
 
     return content[open_tag_end + 1 .. e_idx];
 }
@@ -55,7 +55,7 @@ pub fn parseS3Error(allocator: Allocator, body: []const u8) !types.S3Error {
 
 /// Parse ListObjectsV2 response
 pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjectsResult {
-    var objects = std.ArrayListUnmanaged(types.ObjectInfo).empty;
+    var objects = std.ArrayList(types.ObjectInfo).empty;
     errdefer {
         for (objects.items) |*obj| obj.deinit();
         objects.deinit(allocator);
@@ -67,7 +67,7 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
     while (it.next()) |obj_xml| {
         // Only process until </Contents> if it exists in this chunk
         var chunk = obj_xml;
-        if (std.mem.indexOf(u8, obj_xml, "</Contents>")) |end_idx| {
+        if (std.mem.find(u8, obj_xml, "</Contents>")) |end_idx| {
             chunk = obj_xml[0..end_idx];
         }
 
@@ -109,7 +109,7 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
 
 /// Parse ListBuckets response
 pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucketsResult {
-    var buckets = std.ArrayListUnmanaged(types.BucketInfo).empty;
+    var buckets = std.ArrayList(types.BucketInfo).empty;
     errdefer {
         for (buckets.items) |*b| b.deinit();
         buckets.deinit(allocator);
@@ -120,7 +120,7 @@ pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucke
 
     while (it.next()) |bucket_xml| {
         var chunk = bucket_xml;
-        if (std.mem.indexOf(u8, bucket_xml, "</Bucket>")) |end_idx| {
+        if (std.mem.find(u8, bucket_xml, "</Bucket>")) |end_idx| {
             chunk = bucket_xml[0..end_idx];
         }
 

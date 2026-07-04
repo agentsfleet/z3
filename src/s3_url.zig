@@ -15,10 +15,10 @@ fn endpointHostSlice(endpoint: []const u8) struct { scheme: ?[]const u8, host: [
         host = host[7..];
     }
 
-    const cut = std.mem.indexOfAny(u8, host, "/?#") orelse host.len;
+    const cut = std.mem.findAny(u8, host, "/?#") orelse host.len;
     host = host[0..cut];
 
-    if (std.mem.lastIndexOfScalar(u8, host, '@')) |at| {
+    if (std.mem.findScalarLast(u8, host, '@')) |at| {
         host = host[at + 1 ..];
     }
 

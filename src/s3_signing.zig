@@ -49,9 +49,9 @@ pub fn signRequest(
         }
     }.lessThan);
 
-    var canonical_headers = std.ArrayListUnmanaged(u8).empty;
+    var canonical_headers = std.ArrayList(u8).empty;
     defer canonical_headers.deinit(self.allocator);
-    var signed_headers = std.ArrayListUnmanaged(u8).empty;
+    var signed_headers = std.ArrayList(u8).empty;
     defer signed_headers.deinit(self.allocator);
 
     for (headers_sorted, 0..) |header, i| {

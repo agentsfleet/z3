@@ -261,9 +261,8 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
     var http_req: http.Client.Request = while (attempt <= req.max_attempts) : (attempt += 1) {
         const request = self.http_client.request(req.http_method, uri, .{
             .extra_headers = req.headers,
-        }) catch |err| {
+        }) catch {
             if (attempt == req.max_attempts) {
-                std.log.err("Connection error: {any}", .{err});
                 return error.ConnectionFailed;
             } else {
                 var rand_int: [1]u8 = undefined;

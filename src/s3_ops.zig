@@ -66,7 +66,6 @@ pub fn getFile(
         defer self.allocator.free(body);
         var s3_err = xml.parseS3Error(self.allocator, body) catch return error.RequestFailed;
         defer s3_err.deinit();
-        std.log.err("S3 error: {s} - {s}", .{ s3_err.code, s3_err.message });
         return error.S3Error;
     }
 
@@ -193,12 +192,10 @@ pub fn createMultipartUpload(
     defer response.deinit();
 
     if (response.http_head.status != .ok) {
-        var s3_err = xml.parseS3Error(self.allocator, response.body) catch |err| {
-            std.log.err("failed to parse s3 error: {s}", .{@errorName(err)});
+        var s3_err = xml.parseS3Error(self.allocator, response.body) catch {
             return error.RequestFailed;
         };
         defer s3_err.deinit();
-        std.log.err("S3 error: {s} - {s}", .{ s3_err.code, s3_err.message });
         return error.S3Error;
     }
 
@@ -279,12 +276,10 @@ pub fn completeMultipartUpload(
     defer resp.deinit();
 
     if (resp.http_head.status != .ok) {
-        var s3_err = xml.parseS3Error(self.allocator, resp.body) catch |err| {
-            std.log.err("failed to parse s3 error: {s}", .{@errorName(err)});
+        var s3_err = xml.parseS3Error(self.allocator, resp.body) catch {
             return error.RequestFailed;
         };
         defer s3_err.deinit();
-        std.log.err("S3 error: {s} - {s}", .{ s3_err.code, s3_err.message });
         return error.S3Error;
     }
 
@@ -335,12 +330,10 @@ pub fn listObjects(self: *S3Client, bucket: []const u8, options: ListObjectsOpti
     defer response.deinit();
 
     if (response.http_head.status != .ok) {
-        var s3_err = xml.parseS3Error(self.allocator, response.body) catch |err| {
-            std.log.err("failed to parse s3 error: {s}", .{@errorName(err)});
+        var s3_err = xml.parseS3Error(self.allocator, response.body) catch {
             return error.RequestFailed;
         };
         defer s3_err.deinit();
-        std.log.err("S3 error: {s} - {s}", .{ s3_err.code, s3_err.message });
         return error.S3Error;
     }
 
@@ -382,12 +375,10 @@ pub fn listBuckets(self: *S3Client) S3Client.RequestError!types.ListBucketsResul
     defer response.deinit();
 
     if (response.http_head.status != .ok) {
-        var s3_err = xml.parseS3Error(self.allocator, response.body) catch |err| {
-            std.log.err("failed to parse s3 error: {s}", .{@errorName(err)});
+        var s3_err = xml.parseS3Error(self.allocator, response.body) catch {
             return error.RequestFailed;
         };
         defer s3_err.deinit();
-        std.log.err("S3 error: {s} - {s}", .{ s3_err.code, s3_err.message });
         return error.S3Error;
     }
 

@@ -4,14 +4,6 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // S3 client library module (no external dependencies - uses std.http.Client)
-    _ = b.addModule("s3", .{
-        .root_source_file = b.path("src/s3_client.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // Library module (exports S3Client)
     const s3_mod = b.addModule("s3", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -38,7 +30,11 @@ pub fn build(b: *std.Build) void {
         b.installArtifact(example_exe);
 
         const run = b.addRunArtifact(example_exe);
-        if (b.args) |args| run.addArgs(args);
+        if (@hasField(std.Build, "args")) {
+            if (b.args) |args| run.addArgs(args);
+        } else {
+            run.addPassthruArgs();
+        }
 
         const step = b.step(ex[0], "Run " ++ ex[0]);
         step.dependOn(&run.step);

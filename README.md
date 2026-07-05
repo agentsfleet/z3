@@ -4,7 +4,7 @@
 
 ## Toolchain
 
-This project targets `0.16.0`.
+This project targets minimum zig `0.16.0`.
 
 ## Features
 

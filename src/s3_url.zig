@@ -35,8 +35,8 @@ pub fn buildUrl(self: *S3Client, bucket: []const u8, key: ?[]const u8, query: ?[
 
     const encoded_key = if (key) |k| blk: {
         const encoded_k = try internal.encodePath(self.allocator, k);
-        const fmt_k = try std.fmt.allocPrint(self.allocator, "/{s}", .{encoded_k});
         defer self.allocator.free(encoded_k);
+        const fmt_k = try std.fmt.allocPrint(self.allocator, "/{s}", .{encoded_k});
         break :blk fmt_k;
     } else "";
     defer if (key != null) self.allocator.free(encoded_key);

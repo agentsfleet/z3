@@ -15,4 +15,5 @@ pub const S3Error = types.S3Error;
 test {
     _ = @import("s3_client.zig");
     _ = @import("types.zig");
+    _ = @import("xml.zig");
 }

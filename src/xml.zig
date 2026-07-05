@@ -44,12 +44,23 @@ fn extractTagOptionalDupe(allocator: Allocator, content: []const u8, tag: []cons
 
 /// Parse S3 error response XML
 pub fn parseS3Error(allocator: Allocator, body: []const u8) !types.S3Error {
+    const code = try extractTagDupe(allocator, body, "Code");
+    errdefer allocator.free(code);
+
+    const message = try extractTagDupe(allocator, body, "Message");
+    errdefer allocator.free(message);
+
+    const request_id = try extractTagDupe(allocator, body, "RequestId");
+    errdefer allocator.free(request_id);
+
+    const resource = try extractTagDupe(allocator, body, "Resource");
+
     return types.S3Error{
         .allocator = allocator,
-        .code = try extractTagDupe(allocator, body, "Code"),
-        .message = try extractTagDupe(allocator, body, "Message"),
-        .request_id = try extractTagDupe(allocator, body, "RequestId"),
-        .resource = try extractTagDupe(allocator, body, "Resource"),
+        .code = code,
+        .message = message,
+        .request_id = request_id,
+        .resource = resource,
     };
 }
 
@@ -95,6 +106,10 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
     }
 
     var prefixes: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (prefixes.items) |prefix| allocator.free(prefix);
+        prefixes.deinit(allocator);
+    }
 
     var prefix_it = std.mem.splitSequence(u8, body, "<CommonPrefixes>");
     _ = prefix_it.first();
@@ -116,11 +131,26 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
         is_truncated = std.mem.eql(u8, trunc, "true");
     }
 
+    const next_continuation_token = try extractTagOptionalDupe(allocator, body, "NextContinuationToken");
+    errdefer if (next_continuation_token) |t| allocator.free(t);
+
+    const object_slice = try objects.toOwnedSlice(allocator);
+    errdefer {
+        for (object_slice) |*obj| obj.deinit();
+        allocator.free(object_slice);
+    }
+
+    const prefix_slice = try prefixes.toOwnedSlice(allocator);
+    errdefer {
+        for (prefix_slice) |prefix| allocator.free(prefix);
+        allocator.free(prefix_slice);
+    }
+
     return types.ListObjectsResult{
-        .objects = try objects.toOwnedSlice(allocator),
-        .common_prefixes = try prefixes.toOwnedSlice(allocator),
+        .objects = object_slice,
+        .common_prefixes = prefix_slice,
         .is_truncated = is_truncated,
-        .next_continuation_token = try extractTagOptionalDupe(allocator, body, "NextContinuationToken"),
+        .next_continuation_token = next_continuation_token,
         .allocator = allocator,
     };
 }
@@ -155,35 +185,81 @@ pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucke
         });
     }
 
+    const owner_id = try extractTagOptionalDupe(allocator, body, "ID");
+    errdefer if (owner_id) |id| allocator.free(id);
+
+    const owner_display_name = try extractTagOptionalDupe(allocator, body, "DisplayName");
+    errdefer if (owner_display_name) |n| allocator.free(n);
+
+    const bucket_slice = try buckets.toOwnedSlice(allocator);
+    errdefer {
+        for (bucket_slice) |*bucket| bucket.deinit();
+        allocator.free(bucket_slice);
+    }
+
     return types.ListBucketsResult{
-        .buckets = try buckets.toOwnedSlice(allocator),
-        .owner_id = try extractTagOptionalDupe(allocator, body, "ID"),
-        .owner_display_name = try extractTagOptionalDupe(allocator, body, "DisplayName"),
+        .buckets = bucket_slice,
+        .owner_id = owner_id,
+        .owner_display_name = owner_display_name,
         .allocator = allocator,
     };
 }
 
 pub fn parseCreateMultipartUpload(allocator: Allocator, body: []const u8) !types.CreateMultipartUploadResult {
+    const bucket = try extractTagDupe(allocator, body, "Bucket");
+    errdefer allocator.free(bucket);
+
+    const key = try extractTagDupe(allocator, body, "Key");
+    errdefer allocator.free(key);
+
+    const upload_id = try extractTagDupe(allocator, body, "UploadId");
+
     return .{
-        .bucket = try extractTagDupe(allocator, body, "Bucket"),
-        .key = try extractTagDupe(allocator, body, "Key"),
-        .upload_id = try extractTagDupe(allocator, body, "UploadId"),
+        .bucket = bucket,
+        .key = key,
+        .upload_id = upload_id,
         .allocator = allocator,
     };
 }
 
 pub fn parseCompleteMultipartUpload(allocator: Allocator, body: []const u8) !types.CompleteMultipartUploadResult {
+    const bucket = try extractTagDupe(allocator, body, "Bucket");
+    errdefer allocator.free(bucket);
+
+    const key = try extractTagDupe(allocator, body, "Key");
+    errdefer allocator.free(key);
+
+    const etag = try extractTagDupe(allocator, body, "ETag");
+    errdefer allocator.free(etag);
+
+    const checksum_crc32 = try extractTagOptionalDupe(allocator, body, "ChecksumCRC32");
+    errdefer if (checksum_crc32) |v| allocator.free(v);
+
+    const checksum_crc32c = try extractTagOptionalDupe(allocator, body, "ChecksumCRC32C");
+    errdefer if (checksum_crc32c) |v| allocator.free(v);
+
+    const checksum_crc64nvme = try extractTagOptionalDupe(allocator, body, "ChecksumCRC64NVME");
+    errdefer if (checksum_crc64nvme) |v| allocator.free(v);
+
+    const checksum_sha1 = try extractTagOptionalDupe(allocator, body, "ChecksumSHA1");
+    errdefer if (checksum_sha1) |v| allocator.free(v);
+
+    const checksum_sha256 = try extractTagOptionalDupe(allocator, body, "ChecksumSHA256");
+    errdefer if (checksum_sha256) |v| allocator.free(v);
+
+    const checksum_type = try extractTagOptionalDupe(allocator, body, "ChecksumType");
+
     return .{
         .allocator = allocator,
-        .bucket = try extractTagDupe(allocator, body, "Bucket"),
-        .key = try extractTagDupe(allocator, body, "Key"),
-        .etag = try extractTagDupe(allocator, body, "ETag"),
-        .checksum_crc32 = try extractTagOptionalDupe(allocator, body, "ChecksumCRC32"),
-        .checksum_crc32c = try extractTagOptionalDupe(allocator, body, "ChecksumCRC32C"),
-        .checksum_crc64nvme = try extractTagOptionalDupe(allocator, body, "ChecksumCRC64NVME"),
-        .checksum_sha1 = try extractTagOptionalDupe(allocator, body, "ChecksumSHA1"),
-        .checksum_sha256 = try extractTagOptionalDupe(allocator, body, "ChecksumSHA256"),
-        .checksum_type = try extractTagOptionalDupe(allocator, body, "ChecksumType"),
+        .bucket = bucket,
+        .key = key,
+        .etag = etag,
+        .checksum_crc32 = checksum_crc32,
+        .checksum_crc32c = checksum_crc32c,
+        .checksum_crc64nvme = checksum_crc64nvme,
+        .checksum_sha1 = checksum_sha1,
+        .checksum_sha256 = checksum_sha256,
+        .checksum_type = checksum_type,
     };
 }
 

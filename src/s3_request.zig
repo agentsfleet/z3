@@ -63,6 +63,19 @@ fn makeCanonicalCustomHeader(
     };
 }
 
+fn appendOwnedHeader(self: *S3Client, headers: *std.ArrayListUnmanaged(http.Header), name: []const u8, value: []const u8) !void {
+    const name_dupe = try self.allocator.dupe(u8, name);
+    errdefer self.allocator.free(name_dupe);
+
+    const value_dupe = try self.allocator.dupe(u8, value);
+    errdefer self.allocator.free(value_dupe);
+
+    try headers.append(self.allocator, .{
+        .name = name_dupe,
+        .value = value_dupe,
+    });
+}
+
 const RequestParams = struct {
     query: ?[]const u8 = null,
     body: []const u8 = "",
@@ -127,8 +140,14 @@ pub fn prepareRequest(
         for (metadata) |item| {
             const raw_name = try std.fmt.allocPrint(self.allocator, "x-amz-meta-{s}", .{item.name});
             defer self.allocator.free(raw_name);
+
             const lower_name = try internal.toLowerAlloc(self.allocator, raw_name);
+            var lower_name_moved = false;
+            errdefer if (!lower_name_moved) self.allocator.free(lower_name);
+
             try metadata_sign_names.append(self.allocator, lower_name);
+            lower_name_moved = true;
+
             try headers_to_sign.append(self.allocator, .{ .name = lower_name, .value = item.value });
         }
     }
@@ -167,7 +186,7 @@ pub fn prepareRequest(
         params.query,
         headers_to_sign.items,
     );
-    errdefer self.allocator.free(auth_header);
+    defer self.allocator.free(auth_header);
 
     var temp_headers = std.ArrayList(http.Header).empty;
     var temp_headers_moved = false;
@@ -181,50 +200,52 @@ pub fn prepareRequest(
         }
     }
 
-    try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "X-Amz-Date"), .value = try self.allocator.dupe(u8, date_header) });
-    try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "X-Amz-Content-Sha256"), .value = try self.allocator.dupe(u8, content_hash) });
-    try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Authorization"), .value = auth_header });
-    try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Accept-Encoding"), .value = try self.allocator.dupe(u8, "identity") });
+    try appendOwnedHeader(self, &temp_headers, "X-Amz-Date", date_header);
+    try appendOwnedHeader(self, &temp_headers, "X-Amz-Content-Sha256", content_hash);
+    try appendOwnedHeader(self, &temp_headers, "Authorization", auth_header);
+    try appendOwnedHeader(self, &temp_headers, "Accept-Encoding", "identity");
 
     if (params.copy_source) |src| {
-        try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "X-Amz-Copy-Source"), .value = try self.allocator.dupe(u8, src) });
+        try appendOwnedHeader(self, &temp_headers, "X-Amz-Copy-Source", src);
     }
 
     if (params.metadata) |metadata| {
         for (metadata) |item| {
             const raw_name = try std.fmt.allocPrint(self.allocator, "x-amz-meta-{s}", .{item.name});
             defer self.allocator.free(raw_name);
+
             const lower_name = try internal.toLowerAlloc(self.allocator, raw_name);
+            var lower_name_moved = false;
+            errdefer if (!lower_name_moved) self.allocator.free(lower_name);
+
             const value_dupe = try self.allocator.dupe(u8, item.value);
             var owned = false;
             errdefer if (!owned) {
-                self.allocator.free(lower_name);
                 self.allocator.free(value_dupe);
             };
+
             try temp_headers.append(self.allocator, .{ .name = lower_name, .value = value_dupe });
+            lower_name_moved = true;
             owned = true;
         }
     }
 
     if (params.content_type) |content_type| {
-        try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Content-Type"), .value = try self.allocator.dupe(u8, content_type) });
+        try appendOwnedHeader(self, &temp_headers, "Content-Type", content_type);
     } else if (method == .PUT and body_len > 0) {
-        try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Content-Type"), .value = try self.allocator.dupe(u8, "application/octet-stream") });
+        try appendOwnedHeader(self, &temp_headers, "Content-Type", "application/octet-stream");
     }
 
     if (params.range) |range| {
         const range_fmt = try std.fmt.allocPrint(self.allocator, "bytes={d}-{d}", .{ range.start, range.end });
         defer self.allocator.free(range_fmt);
-        try temp_headers.append(self.allocator, .{
-            .name = try self.allocator.dupe(u8, "Range"),
-            .value = try self.allocator.dupe(u8, range_fmt),
-        });
+        try appendOwnedHeader(self, &temp_headers, "Range", range_fmt);
     }
 
     // Add Content-Length: 0 and Connection: close for DELETE to work around TLS+async Io issue
     if (method == .DELETE) {
-        try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Content-Length"), .value = try self.allocator.dupe(u8, "0") });
-        try temp_headers.append(self.allocator, .{ .name = try self.allocator.dupe(u8, "Connection"), .value = try self.allocator.dupe(u8, "close") });
+        try appendOwnedHeader(self, &temp_headers, "Content-Length", "0");
+        try appendOwnedHeader(self, &temp_headers, "Connection", "close");
     }
 
     // Canonicalize and validate custom headers before signing so SigV4 covers
@@ -507,6 +528,41 @@ test "prepareRequest rejects conflicting custom headers" {
     try std.testing.expectError(error.ConflictingCustomHeader, prepareRequest(&client, .GET, "bucket", "key", .{
         .options = .{ .custom_header = &custom_headers },
     }));
+}
+
+fn checkPrepareRequestAllocationFailures(allocator: std.mem.Allocator) !void {
+    var client = S3Client{
+        .allocator = allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    const metadata = [_]S3Client.Metadata{
+        .{ .name = "Color", .value = "blue" },
+    };
+    const custom_headers = [_]http.Header{
+        .{ .name = "X-Amz-Checksum-Mode", .value = "ENABLED" },
+    };
+
+    var req = try prepareRequest(&client, .PUT, "bucket", "key", .{
+        .body = "data",
+        .copy_source = "/source-bucket/source-key",
+        .content_type = "text/plain",
+        .metadata = &metadata,
+        .range = .{ .start = 1, .end = 2 },
+        .options = .{ .custom_header = &custom_headers },
+    });
+    defer req.deinit();
+}
+
+test "prepareRequest cleans up allocation failures" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkPrepareRequestAllocationFailures, .{});
 }
 
 test "Parse custom S3 header" {

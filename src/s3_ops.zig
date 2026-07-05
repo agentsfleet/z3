@@ -394,6 +394,19 @@ const QueryParam = struct {
     value: []const u8,
 };
 
+fn appendEncodedQueryParam(self: *S3Client, params: *std.ArrayListUnmanaged(QueryParam), key: []const u8, value: []const u8) !void {
+    const encoded_key = try internal.encodeQueryValue(self.allocator, key);
+    errdefer self.allocator.free(encoded_key);
+
+    const encoded_value = try internal.encodeQueryValue(self.allocator, value);
+    errdefer self.allocator.free(encoded_value);
+
+    try params.append(self.allocator, .{
+        .key = encoded_key,
+        .value = encoded_value,
+    });
+}
+
 fn buildListObjectsQuery(self: *S3Client, options: ListObjectsOptions) ![]u8 {
     var params = std.ArrayList(QueryParam).empty;
     errdefer {
@@ -404,39 +417,24 @@ fn buildListObjectsQuery(self: *S3Client, options: ListObjectsOptions) ![]u8 {
         params.deinit(self.allocator);
     }
 
-    try params.append(self.allocator, .{
-        .key = try internal.encodeQueryValue(self.allocator, "list-type"),
-        .value = try internal.encodeQueryValue(self.allocator, "2"),
-    });
+    try appendEncodedQueryParam(self, &params, "list-type", "2");
 
     if (options.prefix) |p| {
-        try params.append(self.allocator, .{
-            .key = try internal.encodeQueryValue(self.allocator, "prefix"),
-            .value = try internal.encodeQueryValue(self.allocator, p),
-        });
+        try appendEncodedQueryParam(self, &params, "prefix", p);
     }
 
     if (options.common_prefix_delimiter) |d| {
-        try params.append(self.allocator, .{
-            .key = try internal.encodeQueryValue(self.allocator, "delimiter"),
-            .value = try internal.encodeQueryValue(self.allocator, d),
-        });
+        try appendEncodedQueryParam(self, &params, "delimiter", d);
     }
 
     if (options.continuation_token) |token| {
-        try params.append(self.allocator, .{
-            .key = try internal.encodeQueryValue(self.allocator, "continuation-token"),
-            .value = try internal.encodeQueryValue(self.allocator, token),
-        });
+        try appendEncodedQueryParam(self, &params, "continuation-token", token);
     }
 
     if (options.max_keys) |max| {
         var buf: [20]u8 = undefined;
         const max_str = std.fmt.bufPrint(&buf, "{d}", .{max}) catch return error.RequestTooLong;
-        try params.append(self.allocator, .{
-            .key = try internal.encodeQueryValue(self.allocator, "max-keys"),
-            .value = try internal.encodeQueryValue(self.allocator, max_str),
-        });
+        try appendEncodedQueryParam(self, &params, "max-keys", max_str);
     }
 
     std.sort.heap(QueryParam, params.items, {}, struct {
@@ -493,4 +491,30 @@ test "buildListObjectsQuery supports prefix and continuation token" {
     });
     defer std.testing.allocator.free(query);
     try std.testing.expectEqualStrings("continuation-token=token%2B1&list-type=2&max-keys=50&prefix=a%2Fb%20c", query);
+}
+
+fn checkBuildListObjectsQueryAllocationFailures(allocator: std.mem.Allocator) !void {
+    var client = S3Client{
+        .allocator = allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    const query = try buildListObjectsQuery(&client, .{
+        .prefix = "a/b c",
+        .common_prefix_delimiter = "/",
+        .continuation_token = "token+1",
+        .max_keys = 50,
+    });
+    defer allocator.free(query);
+}
+
+test "buildListObjectsQuery cleans up allocation failures" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, checkBuildListObjectsQueryAllocationFailures, .{});
 }

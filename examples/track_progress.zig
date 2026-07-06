@@ -3,10 +3,11 @@ const z3 = @import("s3");
 const CustomStreams = z3.S3Client.CustomStreams;
 
 pub const custom_streams: CustomStreams = .{ .custom_stream_writer = CountingWriter };
+var progress_state: usize = 0;
 
 pub fn main(init: std.process.Init) !void {
-    std.debug.print("{any}\n", .{z3.S3Client.custom_stream});
-    std.process.exit(0);
+    // std.debug.print("{any}\n", .{z3.S3Client.custom_streams});
+    // std.process.exit(0);
     const gpa = init.gpa;
 
     var threaded: std.Io.Threaded = .init(gpa, .{ .environ = init.minimal.environ });
@@ -56,16 +57,32 @@ pub fn main(init: std.process.Init) !void {
     const file = try std.Io.Dir.cwd().readFileAlloc(io, argv[1], gpa, .unlimited);
     defer gpa.free(file);
 
+    const progress_thread: std.Thread = try .spawn(.{}, trackProgress, .{ io, file.len, argv[1] });
+    progress_thread.detach();
+
     var resp = try client.putObject(bucket, key, file, .{});
     defer resp.deinit();
 
     if (resp.http_head.status != .ok) std.log.err("Something went wrong", .{});
 }
 
+fn trackProgress(io: std.Io, size: u64, name: []const u8) void {
+    while (true) {
+        if (progress_state > 0) {
+            std.debug.print("\r{d}/{d}: {s}", .{ progress_state, size, name });
+            if (progress_state == size) break;
+            io.sleep(.fromMilliseconds(50), .awake) catch {};
+        }
+    }
+    std.debug.print("\n", .{});
+    std.log.info("Ended. 'progress_state': {d}", .{progress_state});
+    progress_state = 0;
+}
+
 const CountingWriter = struct {
     inner: *std.Io.Writer,
-    pos: u64 = 0,
     interface: std.Io.Writer,
+    pos: u64 = 0,
 
     pub fn init(inner: *std.Io.Writer, buffer: []u8) CountingWriter {
         return .{
@@ -83,8 +100,8 @@ const CountingWriter = struct {
     fn drainFn(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
         const self: *CountingWriter = @fieldParentPtr("interface", w);
         const n = try self.inner.vtable.drain(self.inner, data, splat);
+        progress_state += n;
         self.pos += n;
-        std.debug.print("{d}\n", .{self.logicalPos()});
         return n;
     }
 

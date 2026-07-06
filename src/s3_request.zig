@@ -319,8 +319,14 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         std.debug.assert(req.body.len == req.content_length);
         http_req.transfer_encoding = .{ .content_length = req.content_length };
         var body_writer = http_req.sendBody(&.{}) catch return error.SendFailed;
-        var writer_counter: CountingWriter = .init(&body_writer.writer, &.{});
-        writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
+        if (S3Client.custom_streams.custom_stream_writer) |w| {
+            var writer_counter = w.init(&body_writer.writer, &.{});
+            writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
+        } else {
+            body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
+        }
+        // var writer_counter: CountingWriter = .init(&body_writer.writer, &.{});
+        // writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
         // body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
         body_writer.end() catch return error.WriteFailed;
         http_req.connection.?.flush() catch return error.FlushFailed;

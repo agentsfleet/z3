@@ -58,6 +58,14 @@ pub const RequestOptions = struct {
     initial_retry_time: i64 = 100,
     /// Custom headers which are appended to the request
     custom_header: ?[]const http.Header = null,
+    // custom_streams: ?@TypeOf(custom_streams.custom_stream_writer) = null,
+    // custom_writer: ?@Struct(
+    //     .auto,
+    //     null,
+    //     &[_][]const u8{ "inner", "interface", "position" },
+    //     &.{ *std.Io.Writer, std.Io.Writer, u64 },
+    //     &.{ .{}, .{}, .{} },
+    // ) = null,
 };
 
 pub const Metadata = struct {

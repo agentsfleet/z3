@@ -319,14 +319,14 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         std.debug.assert(req.body.len == req.content_length);
         http_req.transfer_encoding = .{ .content_length = req.content_length };
         var body_writer = http_req.sendBody(&.{}) catch return error.SendFailed;
-        if (S3Client.custom_streams.custom_stream_writer) |w| {
-            var writer_counter = w.init(&body_writer.writer, &.{});
-            writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
-        } else {
-            body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
-        }
-        // var writer_counter: CountingWriter = .init(&body_writer.writer, &.{});
-        // writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
+        // if (S3Client.custom_streams.custom_stream_writer) |w| {
+        //     var writer_counter = w.init(&body_writer.writer, &.{});
+        //     writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
+        // } else {
+        //     body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
+        // }
+        var writer_counter: CountingWriter = .init(drainFn, &body_writer.writer, &.{});
+        writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
         // body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
         body_writer.end() catch return error.WriteFailed;
         http_req.connection.?.flush() catch return error.FlushFailed;
@@ -357,36 +357,53 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
     };
 }
 
+const ProgressState = struct {
+    bytes_written: u64 = 0,
+    total_bytes: u64,
+};
+
 pub const CountingWriter = struct {
     inner: *std.Io.Writer,
     pos: u64 = 0,
     interface: std.Io.Writer,
+    progress_state: ProgressState,
 
-    pub fn init(inner: *std.Io.Writer, buffer: []u8) CountingWriter {
+    pub fn init(
+        drain_fn: *const fn (
+            w: *std.Io.Writer,
+            data: []const []const u8,
+            splat: usize,
+        ) std.Io.Writer.Error!usize,
+        inner: *std.Io.Writer,
+        buffer: []u8,
+        total_bytes: u64,
+    ) CountingWriter {
         return .{
             .inner = inner,
             .interface = .{
                 .vtable = &.{
-                    .drain = drainFn,
+                    .drain = drain_fn,
                 },
                 .buffer = buffer,
                 .end = 0,
             },
+            .progress_state = .{ .total_bytes = total_bytes },
         };
-    }
-
-    fn drainFn(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
-        const self: *CountingWriter = @fieldParentPtr("interface", w);
-        const n = try self.inner.vtable.drain(self.inner, data, splat);
-        self.pos += n;
-        std.debug.print("{d}\n", .{self.logicalPos()});
-        return n;
     }
 
     pub fn logicalPos(self: *const CountingWriter) u64 {
         return self.pos;
     }
 };
+
+fn drainFn(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+    const self: *CountingWriter = @fieldParentPtr("interface", w);
+    const n = try self.inner.vtable.drain(self.inner, data, splat);
+    self.pos += n;
+    self.progress_state.bytes_written += n;
+    // std.debug.print("{d}\n", .{self.logicalPos()});
+    return n;
+}
 
 pub const CountingReader = struct {
     inner: *std.Io.Reader,

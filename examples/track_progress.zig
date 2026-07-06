@@ -58,10 +58,10 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(file);
 
     const progress_thread: std.Thread = try .spawn(.{}, trackProgress, .{ io, file.len, argv[1] });
-    progress_thread.detach();
 
     var resp = try client.putObject(bucket, key, file, .{});
     defer resp.deinit();
+    progress_thread.join();
 
     if (resp.http_head.status != .ok) std.log.err("Something went wrong", .{});
 }

@@ -278,6 +278,8 @@ pub fn prepareRequest(
         .initial_retry_time = params.options.initial_retry_time,
         .req_progress = params.options.req_progress,
         .req_drain_fn = params.options.req_drain_fn,
+        .req_stream_fn = params.options.req_stream_fn,
+        .req_discard_fn = params.options.req_discard_fn,
     };
 }
 
@@ -341,8 +343,11 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         var transfer_buffer: [64]u8 = undefined;
         var decompress: http.Decompress = undefined;
         var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+        // const reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
+        // break :blk reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
         const reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
-        break :blk reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
+        var reader_counter: RequestReader = .init(req.req_stream_fn, req.req_discard_fn, reader, &.{}, req.req_progress);
+        break :blk reader_counter.interface.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
     };
 
     return S3Client.Response{
@@ -394,44 +399,51 @@ pub const RequestWriter = struct {
     }
 };
 
-// pub const CountingReader = struct {
-//     inner: *std.Io.Reader,
-//     pos: u64 = 0,
-//     interface: std.Io.Reader,
+pub const RequestReader = struct {
+    inner: *std.Io.Reader,
+    interface: std.Io.Reader,
+    progress_state: ?*ProgressState,
 
-//     pub fn init(inner: *std.Io.Reader, buffer: []u8) CountingReader {
-//         return .{
-//             .inner = inner,
-//             .interface = .{
-//                 .vtable = &.{
-//                     .stream = streamFn,
-//                     .discard = discardFn,
-//                 },
-//                 .buffer = buffer,
-//                 .seek = 0,
-//                 .end = 0,
-//             },
-//         };
-//     }
+    pub fn init(
+        stream_fn: anytype,
+        discard_fn: anytype,
+        inner: *std.Io.Reader,
+        buffer: []u8,
+        progress: ?*ProgressState,
+    ) RequestReader {
+        return .{
+            .inner = inner,
+            .interface = .{
+                .vtable = &.{
+                    .stream = stream_fn orelse defaultStreamFn,
+                    .discard = discard_fn orelse defaultDiscardFn,
+                },
+                .buffer = buffer,
+                .seek = 0,
+                .end = 0,
+            },
+            .progress_state = progress,
+        };
+    }
 
-//     fn streamFn(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
-//         const self: *CountingReader = @fieldParentPtr("interface", r);
-//         const n = try self.inner.stream(w, limit);
-//         self.pos += n;
-//         return n;
-//     }
+    fn defaultStreamFn(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+        const self: *RequestReader = @fieldParentPtr("interface", r);
+        const n = try self.inner.stream(w, limit);
+        if (self.progress_state) |ps| {
+            ps.bytes_written += n;
+        }
+        return n;
+    }
 
-//     fn discardFn(r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!usize {
-//         const self: *CountingReader = @fieldParentPtr("interface", r);
-//         const n = try self.inner.discard(limit);
-//         self.pos += n;
-//         return n;
-//     }
-
-//     pub fn logicalPos(self: *const CountingReader) u64 {
-//         return self.pos - self.interface.bufferedLen();
-//     }
-// };
+    fn defaultDiscardFn(r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!usize {
+        const self: *RequestReader = @fieldParentPtr("interface", r);
+        const n = try self.inner.discard(limit);
+        if (self.progress_state) |ps| {
+            ps.bytes_written += n;
+        }
+        return n;
+    }
+};
 
 pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequest, reader: *Io.Reader) !S3Client.Response {
     const uri = std.Uri.parse(req.url) catch return error.InvalidUri;

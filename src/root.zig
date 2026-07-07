@@ -13,6 +13,7 @@ pub const ListObjectsResult = types.ListObjectsResult;
 pub const ListBucketsResult = types.ListBucketsResult;
 pub const S3Error = types.S3Error;
 pub const RequestWriter = request.RequestWriter;
+pub const RequestReader = request.RequestReader;
 pub const ProgressState = request.ProgressState;
 
 test {

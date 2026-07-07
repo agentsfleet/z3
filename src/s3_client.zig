@@ -80,6 +80,48 @@ pub const RequestOptions = struct {
     /// }
     /// ```
     req_drain_fn: ?*const fn (w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize = null,
+    /// Customizable function for read stream of http requests. This can be used e.g.
+    /// for tracking the byte stream etc.
+    ///
+    /// The functions arguments can't be customized since the function is passed to
+    /// the `std.Io.Reader.Vtable` which expects this format.
+    ///
+    /// To transfer the byte data, `inner.stream()` has to be called. An example
+    /// implementation looks like the following:
+    ///
+    /// ```zig
+    /// fn defaultStreamFn(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+    ///     const self: *RequestReader = @fieldParentPtr("interface", r);
+    ///     const n = try self.inner.stream(w, limit);
+    ///     // write the streamed bytes to the `ProgressState` struct
+    ///     if (self.progress_state) |ps| {
+    ///         ps.bytes_written += n;
+    ///     }
+    ///     return n;
+    /// }
+    /// ```
+    req_stream_fn: ?*const fn (r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize = null,
+    /// Customizable function for read discard of http requests. This can be used e.g.
+    /// for tracking the byte stream etc.
+    ///
+    /// The functions arguments can't be customized since the function is passed to
+    /// the `std.Io.Writer.Vtable` which expects this format.
+    ///
+    /// To transfer the byte data, `inner.discard()` has to be called. An example
+    /// implementation looks like the following:
+    ///
+    /// ```zig
+    /// fn defaultDiscardFn(r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!usize {
+    ///     const self: *RequestReader = @fieldParentPtr("interface", r);
+    ///     const n = try self.inner.discard(limit);
+    ///     // write the streamed bytes to the `ProgressState` struct
+    ///     if (self.progress_state) |ps| {
+    ///         ps.bytes_written += n;
+    ///     }
+    ///     return n;
+    /// }
+    /// ```
+    req_discard_fn: ?*const fn (r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!usize = null,
 };
 
 pub const Metadata = struct {

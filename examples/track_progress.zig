@@ -1,13 +1,11 @@
 const std = @import("std");
 const z3 = @import("s3");
 const CustomStreams = z3.S3Client.CustomStreams;
-
-pub const custom_streams: CustomStreams = .{ .custom_stream_writer = CountingWriter };
-var progress_state: usize = 0;
+const RequestWriter = z3.RequestWriter;
+const RequestOptions = z3.S3Client.RequestOptions;
+const ProgressState = z3.ProgressState;
 
 pub fn main(init: std.process.Init) !void {
-    // std.debug.print("{any}\n", .{z3.S3Client.custom_streams});
-    // std.process.exit(0);
     const gpa = init.gpa;
 
     var threaded: std.Io.Threaded = .init(gpa, .{ .environ = init.minimal.environ });
@@ -57,55 +55,61 @@ pub fn main(init: std.process.Init) !void {
     const file = try std.Io.Dir.cwd().readFileAlloc(io, argv[1], gpa, .unlimited);
     defer gpa.free(file);
 
-    const progress_thread: std.Thread = try .spawn(.{}, trackProgress, .{ io, file.len, argv[1] });
+    var progress_state: ProgressState = .{ .total_bytes = file.len };
 
-    var resp = try client.putObject(bucket, key, file, .{});
+    std.debug.print("{s}", .{CURSOR_INVISIBLE});
+    const progress_thread: std.Thread = try .spawn(.{}, trackProgress, .{ io, &progress_state, argv[1] });
+
+    var resp = try client.putObject(bucket, key, file, .{
+        .request = .{
+            .req_drain_fn = drainFnCustom,
+            .req_progress = &progress_state,
+        },
+    });
     defer resp.deinit();
     progress_thread.join();
 
     if (resp.http_head.status != .ok) std.log.err("Something went wrong", .{});
 }
 
-fn trackProgress(io: std.Io, size: u64, name: []const u8) void {
+pub const CURSOR_INVISIBLE = "\x1b[?25l";
+pub const CURSOR_VISIBLE = "\x1b[?25h";
+pub const TO_LINE_START = "\x1b[0G";
+
+fn trackProgress(io: std.Io, progress: *ProgressState, name: []const u8) void {
     while (true) {
-        if (progress_state > 0) {
-            std.debug.print("\r{d}/{d}: {s}", .{ progress_state, size, name });
-            if (progress_state == size) break;
+        if (progress.bytes_written > 0) {
+            const total: f64 = @floatFromInt(progress.total_bytes);
+            const cur: f64 = @floatFromInt(progress.bytes_written);
+            const percent = cur / total * 100.0;
+            const fill: usize = @intFromFloat(percent / 100.0 * 50);
+
+            std.debug.print("{s}[", .{TO_LINE_START});
+
+            var idx: usize = 0;
+
+            while (idx < fill) : (idx += 1) {
+                std.debug.print("#", .{});
+            }
+
+            while (idx < 50) : (idx += 1) {
+                std.debug.print(" ", .{});
+            }
+            std.debug.print("] {d:.1}% {s}", .{ percent, name });
+
+            if (progress.bytes_written == progress.total_bytes) break;
             io.sleep(.fromMilliseconds(50), .awake) catch {};
         }
     }
-    std.debug.print("\n", .{});
-    std.log.info("Ended. 'progress_state': {d}", .{progress_state});
-    progress_state = 0;
+    std.debug.print("{s}\n", .{CURSOR_VISIBLE});
+    std.log.info("Ended. 'progress_state': {d} bytes transferred", .{progress.bytes_written});
 }
 
-const CountingWriter = struct {
-    inner: *std.Io.Writer,
-    interface: std.Io.Writer,
-    pos: u64 = 0,
-
-    pub fn init(inner: *std.Io.Writer, buffer: []u8) CountingWriter {
-        return .{
-            .inner = inner,
-            .interface = .{
-                .vtable = &.{
-                    .drain = drainFn,
-                },
-                .buffer = buffer,
-                .end = 0,
-            },
-        };
+fn drainFnCustom(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+    const self: *RequestWriter = @fieldParentPtr("interface", w);
+    const n = try self.inner.vtable.drain(self.inner, data, splat);
+    if (self.progress_state) |ps| {
+        ps.bytes_written += n;
     }
-
-    fn drainFn(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
-        const self: *CountingWriter = @fieldParentPtr("interface", w);
-        const n = try self.inner.vtable.drain(self.inner, data, splat);
-        progress_state += n;
-        self.pos += n;
-        return n;
-    }
-
-    pub fn logicalPos(self: *const CountingWriter) u64 {
-        return self.pos;
-    }
-};
+    return n;
+}

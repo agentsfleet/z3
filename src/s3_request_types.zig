@@ -1,6 +1,7 @@
 const std = @import("std");
 const http = std.http;
 const Allocator = std.mem.Allocator;
+const ProgressState = @import("s3_request.zig").ProgressState;
 
 pub const UnifiedRequest = struct {
     allocator: Allocator,
@@ -13,6 +14,8 @@ pub const UnifiedRequest = struct {
     is_bodiless: bool,
     max_attempts: usize,
     initial_retry_time: i64,
+    req_progress: ?*ProgressState,
+    req_drain_fn: ?*const fn (w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize = null,
 
     pub fn deinit(self: *UnifiedRequest) void {
         self.allocator.free(self.url);

@@ -7,16 +7,10 @@ const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const ops = @import("s3_ops.zig");
 const request_types = @import("s3_request_types.zig");
+const request = @import("s3_request.zig");
 const root = @import("root");
 
 pub const S3Client = @This();
-
-pub const CustomStreams = struct {
-    custom_stream_writer: ?type = null,
-    custom_stream_reader: ?type = null,
-};
-
-pub const custom_streams: CustomStreams = if (@hasDecl(root, "custom_streams")) root.custom_streams else .{};
 
 pub const Config = struct {
     access_key_id: []const u8,
@@ -58,14 +52,34 @@ pub const RequestOptions = struct {
     initial_retry_time: i64 = 100,
     /// Custom headers which are appended to the request
     custom_header: ?[]const http.Header = null,
-    // custom_streams: ?@TypeOf(custom_streams.custom_stream_writer) = null,
-    // custom_writer: ?@Struct(
-    //     .auto,
-    //     null,
-    //     &[_][]const u8{ "inner", "interface", "position" },
-    //     &.{ *std.Io.Writer, std.Io.Writer, u64 },
-    //     &.{ .{}, .{}, .{} },
-    // ) = null,
+    /// Struct for tracking the progress of a request with body byte transfer.
+    /// Has to be a pointer so it can be passed to another thread or run async while
+    /// the request is processed.
+    ///
+    /// If this is `null`, the progress won't/can't get tracked at all.
+    req_progress: ?*request.ProgressState = null,
+    /// Customizable function for write stream of http requests. This can be used e.g.
+    /// for tracking the byte stream etc.
+    ///
+    /// The functions arguments can't be customized since the function is passed to
+    /// the `std.Io.Writer.Vtable` which expects this format.
+    ///
+    /// To transfer the byte data, `inner.vtable.drain()` has to be called. An example
+    /// implementation looks like the following:
+    ///
+    /// ```zig
+    /// fn drainFnCustom(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+    ///     // These two lines are necessary to transfer the bytes correctly
+    ///     const self: *RequestWriter = @fieldParentPtr("interface", w);
+    ///     const n = try self.inner.vtable.drain(self.inner, data, splat);
+    ///     self.pos += n;
+    ///     // Track the progress or print it directly. E.g.:
+    ///     // std.debug.print("\rBytes written: {d}", .{self.pos});
+    ///     // More tracking of bytes etc...
+    ///     return n;
+    /// }
+    /// ```
+    req_drain_fn: ?*const fn (w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize = null,
 };
 
 pub const Metadata = struct {

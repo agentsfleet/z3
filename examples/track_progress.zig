@@ -1,5 +1,7 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const z3 = @import("s3");
+const linux = std.os.linux;
 const CustomStreams = z3.S3Client.CustomStreams;
 const RequestWriter = z3.RequestWriter;
 const RequestReader = z3.RequestReader;
@@ -105,19 +107,37 @@ const Action = enum {
 
 // A progress tracking implementation with a simple progress bar. Needs a terminal
 // width of at least 60 cols + name.len to be properly rendered
-fn trackProgress(io: std.Io, progress: *ProgressState, name: []const u8, action: Action) void {
+fn trackProgress(
+    io: std.Io,
+    progress: *ProgressState,
+    name: []const u8,
+    action: Action,
+) void {
     if (progress.total_bytes == 0) return;
+
+    const win_width: usize = switch (builtin.os.tag) {
+        .linux => blk: {
+            var winsize: std.posix.winsize = undefined;
+            switch (linux.errno(getTermWinsize(&winsize))) {
+                .SUCCESS => break :blk @intCast(winsize.col),
+                else => break :blk 80,
+            }
+        },
+        else => 80,
+    };
+
     const color = switch (action) {
         .GET => "\x1b[36m",
         .PUT => "\x1b[35m",
     };
     std.debug.print("Start {t} object request with progress tracking\n", .{action});
     std.debug.print("{s}", .{CURSOR_INVISIBLE});
+    const bar_width = win_width - (name.len + 11);
     while (true) {
         const total: f64 = @floatFromInt(progress.total_bytes);
         const cur: f64 = @floatFromInt(progress.bytes_written);
         const percent = cur / total * 100.0;
-        const fill: usize = @intFromFloat(percent / 100.0 * 50);
+        const fill: usize = @intFromFloat(percent / 100.0 * @as(f64, @floatFromInt(bar_width)));
 
         std.debug.print("{s}[{s}", .{ TO_LINE_START, color });
 
@@ -129,10 +149,10 @@ fn trackProgress(io: std.Io, progress: *ProgressState, name: []const u8, action:
 
         std.debug.print("{s}", .{RESET});
 
-        while (idx < 50) : (idx += 1) {
+        while (idx < bar_width) : (idx += 1) {
             std.debug.print("-", .{});
         }
-        std.debug.print("] {d:.1}% {s}", .{ percent, name });
+        std.debug.print("] {d:>5.1}% {s}", .{ percent, name });
 
         if (progress.bytes_written == progress.total_bytes) break;
         io.sleep(.fromMilliseconds(50), .awake) catch {};
@@ -171,4 +191,9 @@ fn discardFnCustom(r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!u
         ps.bytes_written += n;
     }
     return n;
+}
+
+// Function for getting terminal size
+fn getTermWinsize(winsize: *std.posix.winsize) usize {
+    return linux.ioctl(linux.STDOUT_FILENO, linux.T.IOCGWINSZ, @intFromPtr(winsize));
 }

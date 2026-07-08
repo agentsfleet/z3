@@ -9,23 +9,23 @@ const test_content = "Hello from Zig S3 client test!";
 const test_meta_key = "test-object-meta.txt";
 const test_meta_content = "Hello with metadata";
 
+const TestEnv = struct {
+    pub fn get(_: @This(), key: []const u8) ?[]const u8 {
+        return std.testing.environ.getPosix(key);
+    }
+};
+
 const TestContext = struct {
     gpa: std.heap.DebugAllocator(.{}),
     client: S3Client,
 
     pub fn init() !*TestContext {
-        const environ = std.testing.environ;
-        const access_key = environ.getPosix("AWS_ACCESS_KEY_ID") orelse return error.SkipZigTest;
-        const secret_key = environ.getPosix("AWS_SECRET_ACCESS_KEY") orelse return error.SkipZigTest;
-        const region = environ.getPosix("AWS_REGION") orelse "auto";
-        const endpoint = environ.getPosix("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
-
-        const config: S3Client.Config = .{
-            .access_key_id = access_key,
-            .secret_access_key = secret_key,
-            .region = region,
-            .endpoint = endpoint,
+        const env = TestEnv{};
+        var config = S3Client.Config.fromEnvMap(env) catch |err| switch (err) {
+            error.MissingAwsCredentials => return error.SkipZigTest,
         };
+        config.region = env.get("AWS_REGION") orelse env.get("AWS_DEFAULT_REGION") orelse "auto";
+        config.endpoint = env.get("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
 
         const ctx = try std.testing.allocator.create(TestContext);
         ctx.gpa = .init;

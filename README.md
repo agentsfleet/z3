@@ -11,6 +11,7 @@ This project targets minimum zig `0.16.0`.
 - **Async & Parallel**: Leverages Zig's `std.Io` for non-blocking, parallel S3 operations.
 - **Pure Zig**: Zero external dependencies beyond the Zig standard library.
 - **S3 Compatible**: Works with AWS S3, Cloudflare R2, MinIO, and other S3-compatible storage services.
+- **AWS Environment Credentials**: Reads standard AWS access key, session token, and region variables.
 - **Comprehensive API**: Supports GET, PUT, DELETE, HEAD, Copy, Bucket management, and file-based uploads/downloads.
 - **Streaming**: Includes streaming APIs for object downloads and direct-to-file transfers.
 - **XML Parsing**: Built-in support for parsing S3 XML responses for object listings and error handling.
@@ -55,14 +56,12 @@ pub fn main(init: std.process.Init) !void {
     defer threaded.deinit();
     const io = threaded.io();
 
-    // Configure the client
-    var client = try S3Client.init(allocator, .{
-        .access_key_id = "YOUR_ACCESS_KEY",
-        .secret_access_key = "YOUR_SECRET_KEY",
-        .region = "auto",
-        .endpoint = "https://<accountid>.r2.cloudflarestorage.com",
-        .virtual_host_style = false, // default
-    }, .{.io = io });
+    var config = try S3Client.Config.fromEnvMap(init.environ_map);
+    config.region = "auto";
+    config.endpoint = "https://<accountid>.r2.cloudflarestorage.com";
+    config.virtual_host_style = false; // default
+
+    var client = try S3Client.init(allocator, config, .{ .io = io });
     defer client.deinit();
 
     // Fetch objects in parallel
@@ -152,7 +151,7 @@ if (first.is_truncated and first.next_continuation_token != null) {
 
 - **Streaming Upload Signatures**: `putFile` requires a seekable file to compute content length and SHA-256; chunked signing is not yet implemented.
 - **Presigned URLs**: Support for generating temporary GET/PUT URLs.
-- **Advanced Authentication**: Support for IAM roles, environment variables, and AWS profile-based credential discovery.
+- **Advanced Authentication**: Support for IAM roles, STS providers, and AWS profile-based credential discovery.
 
 ## Running Examples
 

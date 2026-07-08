@@ -16,29 +16,22 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
-    const access_key = env.get("AWS_ACCESS_KEY_ID") orelse {
-        std.debug.print("AWS_ACCESS_KEY_ID not set\n", .{});
-        return;
-    };
-    const secret_key = env.get("AWS_SECRET_ACCESS_KEY") orelse {
-        std.debug.print("AWS_SECRET_ACCESS_KEY not set\n", .{});
-        return;
-    };
-    const region = env.get("AWS_REGION") orelse "auto";
-    const endpoint = env.get("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
-
     const bucket = env.get("S3_BUCKET") orelse {
         std.debug.print("S3_BUCKET not set\n", .{});
         return;
     };
 
-    var client = try S3Client.init(allocator, .{
-        .access_key_id = access_key,
-        .secret_access_key = secret_key,
-        .region = region,
-        .endpoint = endpoint,
-        .virtual_host_style = false,
-    }, .{ .io = io });
+    var config = S3Client.Config.fromEnvMap(env) catch |err| switch (err) {
+        error.MissingAwsCredentials => {
+            std.debug.print("AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY not set\n", .{});
+            return;
+        },
+    };
+    config.region = env.get("AWS_REGION") orelse env.get("AWS_DEFAULT_REGION") orelse "auto";
+    config.endpoint = env.get("S3_ENDPOINT") orelse "https://7ba9afa0682066b2986a17f41ead69ea.r2.cloudflarestorage.com";
+    config.virtual_host_style = false;
+
+    var client = try S3Client.init(allocator, config, .{ .io = io });
     defer client.deinit();
 
     // Create test objects with known keys

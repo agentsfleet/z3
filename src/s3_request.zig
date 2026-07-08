@@ -399,6 +399,8 @@ pub const RequestWriter = struct {
     }
 };
 
+/// Wrapper for the `std.Io.Reader` used by `GET` requests for reading body content
+/// which enables tracking the progress
 pub const RequestReader = struct {
     inner: *std.Io.Reader,
     interface: std.Io.Reader,

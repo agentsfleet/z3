@@ -24,7 +24,7 @@ pub const Config = struct {
     virtual_host_style: bool = false,
     unsigned_payload: bool = false,
 
-    pub fn fromEnvMap(env_map: anytype) error{MissingAwsCredentials}!Config {
+    pub fn fromEnvMap(env_map: *const std.process.Environ.Map) error{MissingAwsCredentials}!Config {
         const access_key_id = env_map.get("AWS_ACCESS_KEY_ID") orelse return error.MissingAwsCredentials;
         const secret_access_key = env_map.get("AWS_SECRET_ACCESS_KEY") orelse return error.MissingAwsCredentials;
 

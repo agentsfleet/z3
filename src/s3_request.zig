@@ -128,6 +128,9 @@ pub fn prepareRequest(
     if (params.copy_source) |src| {
         try headers_to_sign.append(self.allocator, .{ .name = "x-amz-copy-source", .value = src });
     }
+    if (self.config.session_token) |token| {
+        try headers_to_sign.append(self.allocator, .{ .name = "x-amz-security-token", .value = token });
+    }
 
     var metadata_sign_names = std.ArrayList([]u8).empty;
     defer {
@@ -207,6 +210,9 @@ pub fn prepareRequest(
 
     if (params.copy_source) |src| {
         try appendOwnedHeader(self, &temp_headers, "X-Amz-Copy-Source", src);
+    }
+    if (self.config.session_token) |token| {
+        try appendOwnedHeader(self, &temp_headers, "X-Amz-Security-Token", token);
     }
 
     if (params.metadata) |metadata| {
@@ -505,6 +511,43 @@ test "prepareRequest signs custom headers" {
     }
 
     try std.testing.expect(saw_custom);
+    try std.testing.expect(saw_signed);
+}
+
+test "prepareRequest signs session token" {
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .session_token = "token",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    var req = try prepareRequest(&client, .GET, "bucket", "key", .{});
+    defer req.deinit();
+
+    var saw_token = false;
+    var saw_signed = false;
+    for (req.headers) |header| {
+        if (std.mem.eql(u8, header.name, "X-Amz-Security-Token") and std.mem.eql(u8, header.value, "token")) {
+            saw_token = true;
+        }
+        if (std.mem.eql(u8, header.name, "Authorization")) {
+            if (std.mem.find(u8, header.value, "SignedHeaders=")) |idx| {
+                const tail = header.value[idx..];
+                if (std.mem.find(u8, tail, "x-amz-security-token") != null) {
+                    saw_signed = true;
+                }
+            }
+        }
+    }
+
+    try std.testing.expect(saw_token);
     try std.testing.expect(saw_signed);
 }
 

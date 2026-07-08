@@ -323,9 +323,8 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         std.debug.assert(req.body.len == req.content_length);
         http_req.transfer_encoding = .{ .content_length = req.content_length };
         var body_writer = http_req.sendBody(&.{}) catch return error.SendFailed;
-        var writer_counter = RequestWriter.init(req.req_drain_fn, &body_writer.writer, &.{}, req.req_progress);
-        writer_counter.interface.writeAll(req.body) catch return error.WriteFailed;
-        // body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
+        var request_writer = RequestWriter.init(req.req_drain_fn, &body_writer.writer, &.{}, req.req_progress);
+        request_writer.interface.writeAll(req.body) catch return error.WriteFailed;
         body_writer.end() catch return error.WriteFailed;
         http_req.connection.?.flush() catch return error.FlushFailed;
     }
@@ -343,11 +342,9 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
         var transfer_buffer: [64]u8 = undefined;
         var decompress: http.Decompress = undefined;
         var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
-        // const reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
-        // break :blk reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
         const reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
-        var reader_counter: RequestReader = .init(req.req_stream_fn, req.req_discard_fn, reader, &.{}, req.req_progress);
-        break :blk reader_counter.interface.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
+        var request_reader: RequestReader = .init(req.req_stream_fn, req.req_discard_fn, reader, &.{}, req.req_progress);
+        break :blk request_reader.interface.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
     };
 
     return S3Client.Response{
@@ -459,7 +456,8 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
     http_req.transfer_encoding = .{ .content_length = req.content_length };
     var body_buffer: [16 * 1024]u8 = undefined;
     var body_writer = http_req.sendBody(&body_buffer) catch return error.SendFailed;
-    const written = reader.streamRemaining(&body_writer.writer) catch |err| switch (err) {
+    var send_request_reader: RequestReader = .init(req.req_stream_fn, req.req_discard_fn, reader, &.{}, req.req_progress);
+    const written = send_request_reader.interface.streamRemaining(&body_writer.writer) catch |err| switch (err) {
         error.ReadFailed => return error.ReadFailed,
         error.WriteFailed => return error.WriteFailed,
     };
@@ -482,7 +480,8 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
         var decompress: http.Decompress = undefined;
         var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
         const response_reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
-        break :blk response_reader.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
+        var resp_request_reader: RequestReader = .init(req.req_stream_fn, req.req_discard_fn, response_reader, &.{}, req.req_progress);
+        break :blk resp_request_reader.interface.allocRemaining(self.allocator, Io.Limit.limited(req.max_body_size)) catch return error.ReadFailed;
     };
 
     return S3Client.Response{
@@ -513,7 +512,8 @@ pub fn executeRequestStream(self: *S3Client, req_in: request_types.UnifiedReques
         std.debug.assert(req.body.len == req.content_length);
         request_ptr.transfer_encoding = .{ .content_length = req.content_length };
         var body_writer = request_ptr.sendBody(&.{}) catch return error.SendFailed;
-        body_writer.writer.writeAll(req.body) catch return error.WriteFailed;
+        var request_writer = RequestWriter.init(req.req_drain_fn, &body_writer.writer, &.{}, req.req_progress);
+        request_writer.interface.writeAll(req.body) catch return error.WriteFailed;
         body_writer.end() catch return error.WriteFailed;
         request_ptr.connection.?.flush() catch return error.FlushFailed;
     }

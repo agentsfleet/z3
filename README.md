@@ -17,6 +17,7 @@ This project targets minimum zig `0.16.0`.
 - **XML Parsing**: Built-in support for parsing S3 XML responses for object listings and error handling.
 - **Virtual-Host-Style Requests** Supports both: legacy path-style requests, as well as virtual-host-style requests.
 - **Multipart Upload** Upload big files in chunks (at least 5MB per chunk). Check the [`put-multipart` example](./examples/put_object_multipart.zig) for how to do this asynchronous.
+- **Progress State** Track progress for put/getObject operations, e.g. for rendering a progress bar etc. Check the [`track-progress` example](./examples/track_progress.zig) for a show case. 
 
 ## Prerequisites
 
@@ -160,12 +161,15 @@ The repository includes runnable examples in `examples/`:
 - `examples/put_fetch_async.zig`
 - `examples/get_object_multipart.zig`
 - `examples/put_object_multipart.zig`
+- `examples/track_progress.zig`
 
 Run them with:
 
 ```bash
 zig build example-put-fetch-async
 zig build example-get-multipart
+zig build example-put-multipart
+zig build example-track-progress -- <FILE>
 ```
 
 ## License

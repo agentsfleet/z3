@@ -13,6 +13,7 @@ pub const S3Client = @This();
 pub const Config = struct {
     access_key_id: []const u8,
     secret_access_key: []const u8,
+    session_token: ?[]const u8 = null,
     region: []const u8 = "us-east-1",
     endpoint: ?[]const u8 = null,
     /// Set S3 request style to virtual host style. Otherwise, use the legacy
@@ -22,6 +23,18 @@ pub const Config = struct {
     /// for more information.
     virtual_host_style: bool = false,
     unsigned_payload: bool = false,
+
+    pub fn fromEnvMap(env_map: anytype) error{MissingAwsCredentials}!Config {
+        const access_key_id = env_map.get("AWS_ACCESS_KEY_ID") orelse return error.MissingAwsCredentials;
+        const secret_access_key = env_map.get("AWS_SECRET_ACCESS_KEY") orelse return error.MissingAwsCredentials;
+
+        return .{
+            .access_key_id = access_key_id,
+            .secret_access_key = secret_access_key,
+            .session_token = env_map.get("AWS_SESSION_TOKEN"),
+            .region = env_map.get("AWS_REGION") orelse env_map.get("AWS_DEFAULT_REGION") orelse "us-east-1",
+        };
+    }
 };
 
 pub const InitOptions = struct {
@@ -308,4 +321,40 @@ test {
     _ = @import("s3_signing.zig");
     _ = @import("s3_url.zig");
     _ = @import("s3_internal.zig");
+}
+
+test "Config.fromEnvMap reads credentials, session token, and region" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put("AWS_ACCESS_KEY_ID", "ak");
+    try env.put("AWS_SECRET_ACCESS_KEY", "sk");
+    try env.put("AWS_SESSION_TOKEN", "tok");
+    try env.put("AWS_REGION", "eu-west-1");
+
+    const config = try S3Client.Config.fromEnvMap(&env);
+    try std.testing.expectEqualStrings("ak", config.access_key_id);
+    try std.testing.expectEqualStrings("sk", config.secret_access_key);
+    try std.testing.expectEqualStrings("tok", config.session_token.?);
+    try std.testing.expectEqualStrings("eu-west-1", config.region);
+}
+
+test "Config.fromEnvMap falls back to AWS_DEFAULT_REGION" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put("AWS_ACCESS_KEY_ID", "ak");
+    try env.put("AWS_SECRET_ACCESS_KEY", "sk");
+    try env.put("AWS_DEFAULT_REGION", "us-west-2");
+
+    const config = try S3Client.Config.fromEnvMap(&env);
+    try std.testing.expect(config.session_token == null);
+    try std.testing.expectEqualStrings("us-west-2", config.region);
+}
+
+test "Config.fromEnvMap requires access key and secret key" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.MissingAwsCredentials, S3Client.Config.fromEnvMap(&env));
+
+    try env.put("AWS_ACCESS_KEY_ID", "ak");
+    try std.testing.expectError(error.MissingAwsCredentials, S3Client.Config.fromEnvMap(&env));
 }

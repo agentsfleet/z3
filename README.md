@@ -177,5 +177,5 @@ MIT
 Contributors are welcome, we aim for 100% integration test coverage and unit tests where useful.
 
 This project broadly follows the [ghostty ai usage policy](https://github.com/ghostty-org/ghostty/blob/main/).
-You must disclose AI usage.
+TL;DR You must disclose AI usage, obvious AI slop will be ignored
 

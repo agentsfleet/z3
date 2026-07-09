@@ -171,3 +171,11 @@ zig build example-get-multipart
 ## License
 
 MIT
+
+## Contributions
+
+Contributors are welcome, we aim for 100% integration test coverage and unit tests where useful.
+
+This project broadly follows the [ghostty ai usage policy](https://github.com/ghostty-org/ghostty/blob/main/).
+You must disclose AI usage.
+

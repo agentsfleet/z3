@@ -17,9 +17,9 @@ pub fn main(init: std.process.Init) !void {
 
     const argv = try init.minimal.args.toSlice(init.arena.allocator());
 
-    if (argv.len < 2) {
+    if (argv.len != 2) {
         std.log.err("Need file path as first positional argument", .{});
-        return error.NoFilePathFound;
+        return error.WrongArgumentCount;
     }
 
     const env = init.environ_map;
@@ -59,7 +59,11 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(file);
 
     // Set progress tracking struct for PUT request
-    var progress_state_write: ProgressState = .{ .total_bytes = file.len };
+    var progress_state_write: ProgressState = .{
+        .total_bytes = file.len,
+        .mutex = .init,
+        .io = io,
+    };
 
     // Spaws thread which reads the progress parallel to request execution
     const progress_thread_write: std.Thread = try .spawn(.{}, trackProgress, .{ io, &progress_state_write, argv[1], .PUT });
@@ -75,7 +79,11 @@ pub fn main(init: std.process.Init) !void {
     // Join progress tracking thread before continuing
     progress_thread_write.join();
 
-    var progress_state_read: ProgressState = .{ .total_bytes = file.len };
+    var progress_state_read: ProgressState = .{
+        .total_bytes = file.len,
+        .mutex = .init,
+        .io = io,
+    };
 
     var name_buf: [64]u8 = undefined;
     const progress_thread_read: std.Thread = try .spawn(.{}, trackProgress, .{ io, &progress_state_read, try std.fmt.bufPrint(&name_buf, "{s}/{s}", .{ bucket, key }), .GET });
@@ -133,9 +141,11 @@ fn trackProgress(
     std.debug.print("Start {t} object request with progress tracking\n", .{action});
     std.debug.print("{s}", .{CURSOR_INVISIBLE});
     const bar_width = win_width - (name.len + 11);
+    const total: f64 = @floatFromInt(progress.total_bytes);
     while (true) {
-        const total: f64 = @floatFromInt(progress.total_bytes);
+        progress.mutex.lock(progress.io) catch {};
         const cur: f64 = @floatFromInt(progress.bytes_written);
+        progress.mutex.unlock(progress.io);
         const percent = cur / total * 100.0;
         const fill: usize = @intFromFloat(percent / 100.0 * @as(f64, @floatFromInt(bar_width)));
 
@@ -170,6 +180,8 @@ fn drainFnCustom(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.
     const self: *RequestWriter = @fieldParentPtr("interface", w);
     const n = try self.inner.vtable.drain(self.inner, data, splat);
     if (self.progress_state) |ps| {
+        ps.mutex.lock(ps.io) catch {};
+        defer ps.mutex.unlock(ps.io);
         ps.bytes_written += n;
     }
     return n;
@@ -179,6 +191,8 @@ fn streamFnCustom(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std
     const self: *RequestReader = @fieldParentPtr("interface", r);
     const n = try self.inner.stream(w, limit);
     if (self.progress_state) |ps| {
+        ps.mutex.lock(ps.io) catch {};
+        defer ps.mutex.unlock(ps.io);
         ps.bytes_written += n;
     }
     return n;
@@ -188,6 +202,8 @@ fn discardFnCustom(r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!u
     const self: *RequestReader = @fieldParentPtr("interface", r);
     const n = try self.inner.discard(limit);
     if (self.progress_state) |ps| {
+        ps.mutex.lock(ps.io) catch {};
+        defer ps.mutex.unlock(ps.io);
         ps.bytes_written += n;
     }
     return n;

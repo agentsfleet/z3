@@ -358,6 +358,8 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
 pub const ProgressState = struct {
     bytes_written: u64 = 0,
     total_bytes: u64 = 0,
+    mutex: std.Io.Mutex,
+    io: std.Io,
 };
 
 /// Wrapper for the `std.Io.Writer` used by `std.http.BodyWriter` which enables

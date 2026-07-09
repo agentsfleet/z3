@@ -356,10 +356,8 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
 }
 
 pub const ProgressState = struct {
-    bytes_written: u64 = 0,
-    total_bytes: u64 = 0,
-    mutex: std.Io.Mutex,
-    io: std.Io,
+    bytes_written: std.atomic.Value(u64) = .init(0),
+    content_length: u64 = 0,
 };
 
 /// Wrapper for the `std.Io.Writer` used by `std.http.BodyWriter` which enables
@@ -392,7 +390,7 @@ pub const RequestWriter = struct {
         const self: *RequestWriter = @fieldParentPtr("interface", w);
         const n = try self.inner.vtable.drain(self.inner, data, splat);
         if (self.progress_state) |ps| {
-            ps.bytes_written += n;
+            _ = ps.bytes_written.fetchAdd(n, .monotonic);
         }
         return n;
     }
@@ -431,7 +429,7 @@ pub const RequestReader = struct {
         const self: *RequestReader = @fieldParentPtr("interface", r);
         const n = try self.inner.stream(w, limit);
         if (self.progress_state) |ps| {
-            ps.bytes_written += n;
+            _ = ps.bytes_written.fetchAdd(n, .monotonic);
         }
         return n;
     }
@@ -440,7 +438,7 @@ pub const RequestReader = struct {
         const self: *RequestReader = @fieldParentPtr("interface", r);
         const n = try self.inner.discard(limit);
         if (self.progress_state) |ps| {
-            ps.bytes_written += n;
+            _ = ps.bytes_written.fetchAdd(n, .monotonic);
         }
         return n;
     }

@@ -1,6 +1,6 @@
 const std = @import("std");
-const internal = @import("s3_internal.zig");
-const S3Client = @import("s3_client.zig").S3Client;
+const internal = @import("../internal.zig");
+const S3Client = @import("../client.zig").S3Client;
 
 /// Split an URL into its parts and return scheme and host as single strings.
 /// Everything following the host is cut off.

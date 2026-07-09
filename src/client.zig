@@ -5,9 +5,9 @@ const std = @import("std");
 const http = std.http;
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
-const ops = @import("s3_ops.zig");
-const request_types = @import("s3_request_types.zig");
-const request = @import("s3_request.zig");
+const ops = @import("ops.zig");
+const request_types = @import("http/request_types.zig");
+const request = @import("http/request.zig");
 const root = @import("root");
 
 pub const S3Client = @This();
@@ -397,11 +397,11 @@ owns_http_client: bool,
 config: Config,
 
 test {
-    _ = @import("s3_ops.zig");
-    _ = @import("s3_request.zig");
-    _ = @import("s3_signing.zig");
-    _ = @import("s3_url.zig");
-    _ = @import("s3_internal.zig");
+    _ = @import("ops.zig");
+    _ = @import("http/request.zig");
+    _ = @import("auth/signing.zig");
+    _ = @import("http/url.zig");
+    _ = @import("internal.zig");
 }
 
 test "Config.fromEnvMap reads credentials, session token, and region" {

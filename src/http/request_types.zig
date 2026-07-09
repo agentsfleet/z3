@@ -1,7 +1,7 @@
 const std = @import("std");
 const http = std.http;
 const Allocator = std.mem.Allocator;
-const ProgressState = @import("s3_request.zig").ProgressState;
+const ProgressState = @import("request.zig").ProgressState;
 
 pub const UnifiedRequest = struct {
     allocator: Allocator,

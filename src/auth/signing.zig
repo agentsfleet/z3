@@ -1,7 +1,7 @@
 const std = @import("std");
 const crypto = std.crypto;
-const internal = @import("s3_internal.zig");
-const S3Client = @import("s3_client.zig").S3Client;
+const internal = @import("../internal.zig");
+const S3Client = @import("../client.zig").S3Client;
 
 pub const HeaderToSign = struct {
     name: []const u8,
@@ -125,7 +125,7 @@ fn findHeaderValue(headers: []const HeaderToSign, name: []const u8) ?[]const u8 
 }
 
 test "unsigned payload request" {
-    const url = @import("s3_url.zig");
+    const url = @import("../http/url.zig");
     const bucket = "my-bucket";
     const key = "my-key";
 

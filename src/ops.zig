@@ -4,9 +4,9 @@ const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const xml = @import("xml.zig");
 const types = @import("types.zig");
-const internal = @import("s3_internal.zig");
-const request = @import("s3_request.zig");
-const S3Client = @import("s3_client.zig").S3Client;
+const internal = @import("internal.zig");
+const request = @import("http/request.zig");
+const S3Client = @import("client.zig").S3Client;
 
 pub fn init(allocator: Allocator, config: S3Client.Config, options: S3Client.InitOptions) !S3Client {
     if (options.http_client) |client| {

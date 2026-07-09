@@ -1,11 +1,11 @@
 const std = @import("std");
 const http = std.http;
 const Io = std.Io;
-const internal = @import("s3_internal.zig");
-const signing = @import("s3_signing.zig");
-const url = @import("s3_url.zig");
-const request_types = @import("s3_request_types.zig");
-const S3Client = @import("s3_client.zig").S3Client;
+const internal = @import("../internal.zig");
+const signing = @import("../auth/signing.zig");
+const url = @import("url.zig");
+const request_types = @import("request_types.zig");
+const S3Client = @import("../client.zig").S3Client;
 
 fn containsHeaderName(headers: []const signing.HeaderToSign, lower_name: []const u8) bool {
     for (headers) |header| {

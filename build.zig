@@ -53,9 +53,10 @@ pub fn build(b: *std.Build) void {
     // Integration tests for S3 operations
     const integration_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/s3_test.zig"),
+            .root_source_file = b.path("src/tests/integration.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "s3", .module = s3_mod }},
         }),
     });
     const run_integration_tests = b.addRunArtifact(integration_tests);

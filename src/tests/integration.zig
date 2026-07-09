@@ -1,7 +1,7 @@
 //! S3 Client Integration Tests
 //! Tests all S3 operations in order: createBucket -> putObject -> listBuckets -> listObjects -> getObject -> deleteObject -> deleteBucket
 const std = @import("std");
-const S3Client = @import("s3_client.zig").S3Client;
+const S3Client = @import("s3").S3Client;
 
 const test_bucket = "zig-s3-test-bucket";
 const test_key = "test-object.txt";

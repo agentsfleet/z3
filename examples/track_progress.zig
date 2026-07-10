@@ -60,7 +60,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Set progress tracking struct for PUT request
     var progress_state_write: ProgressState = .{
-        .content_length = file.len,
+        .content_length = .init(file.len),
     };
 
     // Spaws thread which reads the progress parallel to request execution
@@ -78,7 +78,7 @@ pub fn main(init: std.process.Init) !void {
     progress_thread_write.join();
 
     var progress_state_read: ProgressState = .{
-        .content_length = file.len,
+        // .content_length = 1000,
     };
 
     var name_buf: [64]u8 = undefined;
@@ -117,7 +117,13 @@ fn trackProgress(
     name: []const u8,
     action: Action,
 ) void {
-    if (progress.content_length == 0) return;
+    // Loop which waits until the content_length value is set. Either directly by the
+    // user or through the ContentLength header by a GET request.
+    while (true) {
+        const len = progress.content_length.load(.acquire);
+        if (len != ProgressState.unknown_content_length) break;
+        io.sleep(.fromMilliseconds(50), .awake) catch {};
+    }
 
     const win_width: usize = switch (builtin.os.tag) {
         .linux => blk: {
@@ -136,8 +142,8 @@ fn trackProgress(
     };
     std.debug.print("Start {t} object request with progress tracking\n", .{action});
     std.debug.print("{s}", .{CURSOR_INVISIBLE});
+    const total: f64 = @floatFromInt(progress.content_length.load(.monotonic));
     const bar_width = win_width - (name.len + 11);
-    const total: f64 = @floatFromInt(progress.content_length);
     while (true) {
         const cur: f64 = @floatFromInt(progress.bytes_written.load(.monotonic));
         const percent = cur / total * 100.0;
@@ -158,7 +164,7 @@ fn trackProgress(
         }
         std.debug.print("] {d:>5.1}% {s}", .{ percent, name });
 
-        if (progress.bytes_written.load(.monotonic) >= progress.content_length) break;
+        if (progress.bytes_written.load(.monotonic) >= progress.content_length.load(.monotonic)) break;
         io.sleep(.fromMilliseconds(50), .awake) catch {};
     }
     std.debug.print("{s}\n", .{CURSOR_VISIBLE});

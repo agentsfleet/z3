@@ -332,6 +332,12 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
     var redirect_buffer: [8 * 1024]u8 = undefined;
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
+    if (req.req_progress) |ps| {
+        if (response.head.content_length) |l| {
+            ps.content_length.store(l, .monotonic);
+        }
+    }
+
     const header_copy = self.allocator.dupe(u8, response.head.bytes) catch return error.CopyResponseHeadFailed;
     var resp_head_copy = http.Client.Response.Head.parse(header_copy) catch return error.ParseResponseHeadFailed;
     var head_iter = resp_head_copy.iterateHeaders();
@@ -357,7 +363,9 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
 
 pub const ProgressState = struct {
     bytes_written: std.atomic.Value(u64) = .init(0),
-    content_length: u64 = 0,
+    content_length: std.atomic.Value(u64) = .init(unknown_content_length),
+
+    pub const unknown_content_length = std.math.maxInt(u64);
 };
 
 /// Wrapper for the `std.Io.Writer` used by `std.http.BodyWriter` which enables
@@ -468,6 +476,12 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
     var redirect_buffer: [8 * 1024]u8 = undefined;
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
+    if (req.req_progress) |ps| {
+        if (response.head.content_length) |l| {
+            ps.content_length.store(l, .monotonic);
+        }
+    }
+
     const header_copy = self.allocator.dupe(u8, response.head.bytes) catch return error.CopyResponseHeadFailed;
     errdefer self.allocator.free(header_copy);
     var resp_head_copy = http.Client.Response.Head.parse(header_copy) catch return error.ParseResponseHeadFailed;
@@ -523,9 +537,17 @@ pub fn executeRequestStream(self: *S3Client, req_in: request_types.UnifiedReques
         .request = request_ptr,
         .response = undefined,
         .request_data = req,
+        .request_reader = undefined,
     };
 
     stream.response = request_ptr.receiveHead(&stream.redirect_buffer) catch return error.ReceiveFailed;
+
+    if (req.req_progress) |ps| {
+        if (stream.response.head.content_length) |l| {
+            ps.content_length.store(l, .monotonic);
+        }
+    }
+
     return stream;
 }
 

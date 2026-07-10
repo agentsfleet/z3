@@ -259,6 +259,7 @@ pub const ObjectStream = struct {
     decompress: http.Decompress = undefined,
     decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined,
     reader_started: bool = false,
+    request_reader: request.RequestReader,
 
     pub const Error = error{
         ReaderAlreadyRequested,
@@ -271,11 +272,19 @@ pub const ObjectStream = struct {
     pub fn reader(self: *ObjectStream) ObjectStream.Error!*Io.Reader {
         if (self.reader_started) return error.ReaderAlreadyRequested;
         self.reader_started = true;
-        return self.response.readerDecompressing(
+        const response_reader = self.response.readerDecompressing(
             &self.transfer_buffer,
             &self.decompress,
             &self.decompress_buffer,
         );
+        self.request_reader = .init(
+            self.request_data.req_stream_fn,
+            self.request_data.req_discard_fn,
+            response_reader,
+            &.{},
+            self.request_data.req_progress,
+        );
+        return &self.request_reader.interface;
     }
 
     pub fn deinit(self: *ObjectStream) void {

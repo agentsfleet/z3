@@ -4,6 +4,7 @@ const std = @import("std");
 
 pub const S3Client = @import("client.zig").S3Client;
 pub const types = @import("types.zig");
+pub const sts = @import("auth/sts.zig");
 const request = @import("http/request.zig");
 
 // Re-export commonly used types
@@ -18,6 +19,7 @@ pub const ProgressState = request.ProgressState;
 
 test {
     _ = @import("client.zig");
+    _ = sts;
     _ = @import("types.zig");
     _ = @import("xml.zig");
 }

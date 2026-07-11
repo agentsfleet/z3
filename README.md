@@ -12,6 +12,7 @@ This project targets minimum zig `0.16.0`.
 - **Pure Zig**: Zero external dependencies beyond the Zig standard library.
 - **S3 Compatible**: Works with AWS S3, Cloudflare R2, MinIO, and other S3-compatible storage services.
 - **AWS Environment Credentials**: Reads standard AWS access key, session token, and region variables.
+- **STS Web Identity**: Supports `AssumeRoleWithWebIdentity` credentials.
 - **Comprehensive API**: Supports GET, PUT, DELETE, HEAD, Copy, Bucket management, and file-based uploads/downloads.
 - **Streaming**: Includes streaming APIs for object downloads and direct-to-file transfers.
 - **XML Parsing**: Built-in support for parsing S3 XML responses for object listings and error handling.
@@ -87,6 +88,10 @@ pub fn main(init: std.process.Init) !void {
 }
 ```
 
+## Authentication
+
+Use `S3Client.Config.fromEnvMap` for standard AWS environment credentials. For web identity, use `s3.sts.assumeRoleWithWebIdentity`, then pass the returned credentials to `S3Client.Config.fromStsCredentials`.
+
 ## Supported Operations
 
 ### Object Operations
@@ -152,7 +157,7 @@ if (first.is_truncated and first.next_continuation_token != null) {
 
 - **Streaming Upload Signatures**: `putFile` requires a seekable file to compute content length and SHA-256; chunked signing is not yet implemented.
 - **Presigned URLs**: Support for generating temporary GET/PUT URLs.
-- **Advanced Authentication**: Support for IAM roles, STS providers, and AWS profile-based credential discovery.
+- **Advanced Authentication**: Support for ECS/EC2 IAM role discovery and AWS profile-based credential discovery.
 
 ## Running Examples
 

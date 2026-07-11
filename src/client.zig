@@ -8,6 +8,7 @@ const Allocator = std.mem.Allocator;
 const ops = @import("ops.zig");
 const request_types = @import("http/request_types.zig");
 const request = @import("http/request.zig");
+const sts = @import("auth/sts.zig");
 const root = @import("root");
 
 pub const S3Client = @This();
@@ -35,6 +36,15 @@ pub const Config = struct {
             .secret_access_key = secret_access_key,
             .session_token = env_map.get("AWS_SESSION_TOKEN"),
             .region = env_map.get("AWS_REGION") orelse env_map.get("AWS_DEFAULT_REGION") orelse "us-east-1",
+        };
+    }
+
+    pub fn fromStsCredentials(credentials: *const sts.Credentials, region: []const u8) Config {
+        return .{
+            .access_key_id = credentials.access_key_id,
+            .secret_access_key = credentials.secret_access_key,
+            .session_token = credentials.session_token,
+            .region = region,
         };
     }
 };
@@ -438,4 +448,21 @@ test "Config.fromEnvMap requires access key and secret key" {
 
     try env.put("AWS_ACCESS_KEY_ID", "ak");
     try std.testing.expectError(error.MissingAwsCredentials, S3Client.Config.fromEnvMap(&env));
+}
+
+test "Config.fromStsCredentials borrows STS credential fields" {
+    var credentials = sts.Credentials{
+        .access_key_id = try std.testing.allocator.dupe(u8, "ak"),
+        .secret_access_key = try std.testing.allocator.dupe(u8, "sk"),
+        .session_token = try std.testing.allocator.dupe(u8, "token"),
+        .expiration = null,
+        .allocator = std.testing.allocator,
+    };
+    defer credentials.deinit();
+
+    const config = S3Client.Config.fromStsCredentials(&credentials, "us-east-1");
+    try std.testing.expectEqualStrings("ak", config.access_key_id);
+    try std.testing.expectEqualStrings("sk", config.secret_access_key);
+    try std.testing.expectEqualStrings("token", config.session_token.?);
+    try std.testing.expectEqualStrings("us-east-1", config.region);
 }

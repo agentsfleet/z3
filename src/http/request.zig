@@ -374,9 +374,14 @@ pub const RequestWriter = struct {
     inner: *std.Io.Writer,
     interface: std.Io.Writer,
     progress_state: ?*ProgressState,
+    drain_fn: ?*const fn (w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize,
+
+    const vtable: std.Io.Writer.VTable = .{
+        .drain = drain,
+    };
 
     pub fn init(
-        drain_fn: anytype,
+        drain_fn: ?*const fn (w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize,
         inner: *std.Io.Writer,
         buffer: []u8,
         progress: ?*ProgressState,
@@ -384,14 +389,21 @@ pub const RequestWriter = struct {
         return .{
             .inner = inner,
             .interface = .{
-                .vtable = &.{
-                    .drain = drain_fn orelse defaultDrainFn,
-                },
+                .vtable = &vtable,
                 .buffer = buffer,
                 .end = 0,
             },
             .progress_state = progress,
+            .drain_fn = drain_fn,
         };
+    }
+
+    fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+        const self: *RequestWriter = @fieldParentPtr("interface", w);
+        if (self.drain_fn) |custom_drain| {
+            return custom_drain(w, data, splat);
+        }
+        return defaultDrainFn(w, data, splat);
     }
 
     fn defaultDrainFn(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
@@ -410,10 +422,17 @@ pub const RequestReader = struct {
     inner: *std.Io.Reader,
     interface: std.Io.Reader,
     progress_state: ?*ProgressState,
+    stream_fn: ?*const fn (r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize,
+    discard_fn: ?*const fn (r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!usize,
+
+    const vtable: std.Io.Reader.VTable = .{
+        .stream = stream,
+        .discard = discard,
+    };
 
     pub fn init(
-        stream_fn: anytype,
-        discard_fn: anytype,
+        stream_fn: ?*const fn (r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize,
+        discard_fn: ?*const fn (r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!usize,
         inner: *std.Io.Reader,
         buffer: []u8,
         progress: ?*ProgressState,
@@ -421,16 +440,31 @@ pub const RequestReader = struct {
         return .{
             .inner = inner,
             .interface = .{
-                .vtable = &.{
-                    .stream = stream_fn orelse defaultStreamFn,
-                    .discard = discard_fn orelse defaultDiscardFn,
-                },
+                .vtable = &vtable,
                 .buffer = buffer,
                 .seek = 0,
                 .end = 0,
             },
             .progress_state = progress,
+            .stream_fn = stream_fn,
+            .discard_fn = discard_fn,
         };
+    }
+
+    fn stream(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+        const self: *RequestReader = @fieldParentPtr("interface", r);
+        if (self.stream_fn) |custom_stream| {
+            return custom_stream(r, w, limit);
+        }
+        return defaultStreamFn(r, w, limit);
+    }
+
+    fn discard(r: *std.Io.Reader, limit: std.Io.Limit) std.Io.Reader.Error!usize {
+        const self: *RequestReader = @fieldParentPtr("interface", r);
+        if (self.discard_fn) |custom_discard| {
+            return custom_discard(r, limit);
+        }
+        return defaultDiscardFn(r, limit);
     }
 
     fn defaultStreamFn(r: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
@@ -451,6 +485,19 @@ pub const RequestReader = struct {
         return n;
     }
 };
+
+test "progress wrapper vtables have static lifetime" {
+    var output_buffer: [16]u8 = undefined;
+    var inner_writer = std.Io.Writer.fixed(&output_buffer);
+    const request_writer = RequestWriter.init(null, &inner_writer, &.{}, null);
+
+    try std.testing.expectEqual(&RequestWriter.vtable, request_writer.interface.vtable);
+
+    var inner_reader = std.Io.Reader.fixed("reader");
+    const request_reader = RequestReader.init(null, null, &inner_reader, &.{}, null);
+
+    try std.testing.expectEqual(&RequestReader.vtable, request_reader.interface.vtable);
+}
 
 pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequest, reader: *Io.Reader) !S3Client.Response {
     const uri = std.Uri.parse(req.url) catch return error.InvalidUri;

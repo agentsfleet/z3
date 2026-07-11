@@ -82,10 +82,10 @@ pub const RequestOptions = struct {
     ///     // These two lines are necessary to transfer the bytes correctly
     ///     const self: *RequestWriter = @fieldParentPtr("interface", w);
     ///     const n = try self.inner.vtable.drain(self.inner, data, splat);
-    ///     self.pos += n;
-    ///     // Track the progress or print it directly. E.g.:
-    ///     // std.debug.print("\rBytes written: {d}", .{self.pos});
-    ///     // More tracking of bytes etc...
+    ///     // write the streamed bytes to the `ProgressState` struct
+    ///     if (self.progress_state) |ps| {
+    ///         _ = ps.bytes_written.fetchAdd(n, .monotonic);
+    ///     }
     ///     return n;
     /// }
     /// ```
@@ -105,7 +105,7 @@ pub const RequestOptions = struct {
     ///     const n = try self.inner.stream(w, limit);
     ///     // write the streamed bytes to the `ProgressState` struct
     ///     if (self.progress_state) |ps| {
-    ///         ps.bytes_written += n;
+    ///         _ = ps.bytes_written.fetchAdd(n, .monotonic);
     ///     }
     ///     return n;
     /// }
@@ -126,7 +126,7 @@ pub const RequestOptions = struct {
     ///     const n = try self.inner.discard(limit);
     ///     // write the streamed bytes to the `ProgressState` struct
     ///     if (self.progress_state) |ps| {
-    ///         ps.bytes_written += n;
+    ///         _ = ps.bytes_written.fetchAdd(n, .monotonic);
     ///     }
     ///     return n;
     /// }

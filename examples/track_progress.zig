@@ -77,9 +77,7 @@ pub fn main(init: std.process.Init) !void {
     // Join progress tracking thread before continuing
     progress_thread_write.join();
 
-    var progress_state_read: ProgressState = .{
-        // .content_length = 1000,
-    };
+    var progress_state_read: ProgressState = .{};
 
     var name_buf: [64]u8 = undefined;
     const progress_thread_read: std.Thread = try .spawn(.{}, trackProgress, .{ io, &progress_state_read, try std.fmt.bufPrint(&name_buf, "{s}/{s}", .{ bucket, key }), .GET });

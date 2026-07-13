@@ -333,9 +333,7 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
     if (req.req_progress) |ps| {
-        if (response.head.content_length) |l| {
-            ps.content_length.store(l, .monotonic);
-        }
+        ps.resolveTotal(self.http_client.io, response.head.content_length);
     }
 
     const header_copy = self.allocator.dupe(u8, response.head.bytes) catch return error.CopyResponseHeadFailed;
@@ -361,11 +359,52 @@ pub fn executeRequest(self: *S3Client, req: *request_types.UnifiedRequest) !S3Cl
     };
 }
 
+/// Shared state for observing the progress of a request from another thread.
+///
+/// Pass a pointer to one of these as `req_progress`. The library keeps
+/// `bytes_written` up to date as the body is sent/received, and resolves the
+/// total transfer size once it is known. All access goes through the methods
+/// below, so callers never touch the atomics or worry about memory ordering.
 pub const ProgressState = struct {
     bytes_written: std.atomic.Value(u64) = .init(0),
-    content_length: std.atomic.Value(u64) = .init(unknown_content_length),
 
-    pub const unknown_content_length = std.math.maxInt(u64);
+    /// Signalled once `total_value` is final: either set up front via
+    /// `setTotal`, or resolved by the library from the response head. The
+    /// event's set/wait provide the memory barrier that makes `total_value`
+    /// safe to read once it fires.
+    total_known: Io.Event = .unset,
+    /// The transfer size, or null if the transfer has no known length. Only
+    /// valid to read once `total_known` is set.
+    total_value: ?u64 = null,
+
+    /// Declare the total size up front (e.g. for an upload where you already
+    /// know how many bytes you'll send). Takes precedence over the response
+    /// head, so call this before starting the request.
+    pub fn setTotal(self: *ProgressState, io: Io, total_bytes: u64) void {
+        self.total_value = total_bytes;
+        self.total_known.set(io);
+    }
+
+    /// Called by the library once the response head is available. Won't clobber
+    /// a total the caller already set up front via `setTotal`.
+    fn resolveTotal(self: *ProgressState, io: Io, total_bytes: ?u64) void {
+        if (self.total_known.isSet()) return;
+        self.total_value = total_bytes;
+        self.total_known.set(io);
+    }
+
+    /// Bytes transferred so far.
+    pub fn transferred(self: *const ProgressState) u64 {
+        return self.bytes_written.load(.monotonic);
+    }
+
+    /// Blocks until the total size is known, then returns it. Returns null if
+    /// the transfer has no known length (e.g. the response carried no
+    /// Content-Length) — a caller rendering a bar should bail out in that case.
+    pub fn waitTotal(self: *ProgressState, io: Io) ?u64 {
+        self.total_known.waitUncancelable(io);
+        return self.total_value;
+    }
 };
 
 /// Wrapper for the `std.Io.Writer` used by `std.http.BodyWriter` which enables
@@ -524,9 +563,7 @@ pub fn executeRequestWithReader(self: *S3Client, req: *request_types.UnifiedRequ
     var response = http_req.receiveHead(&redirect_buffer) catch return error.ReceiveFailed;
 
     if (req.req_progress) |ps| {
-        if (response.head.content_length) |l| {
-            ps.content_length.store(l, .monotonic);
-        }
+        ps.resolveTotal(self.http_client.io, response.head.content_length);
     }
 
     const header_copy = self.allocator.dupe(u8, response.head.bytes) catch return error.CopyResponseHeadFailed;
@@ -590,9 +627,7 @@ pub fn executeRequestStream(self: *S3Client, req_in: request_types.UnifiedReques
     stream.response = request_ptr.receiveHead(&stream.redirect_buffer) catch return error.ReceiveFailed;
 
     if (req.req_progress) |ps| {
-        if (stream.response.head.content_length) |l| {
-            ps.content_length.store(l, .monotonic);
-        }
+        ps.resolveTotal(self.http_client.io, stream.response.head.content_length);
     }
 
     return stream;

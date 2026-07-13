@@ -49,16 +49,14 @@ Here is a simple example of fetching objects in parallel:
 ```zig
 const std = @import("std");
 const S3Client = @import("s3").S3Client;
+const Io = std.Io;
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
+    const io = init.io;
+    const env = init.environ_map;
 
-    // Initialize async IO
-    var threaded: std.Io.Threaded = .init(allocator, .{ .environ = init.minimal.environ });
-    defer threaded.deinit();
-    const io = threaded.io();
-
-    var config = try S3Client.Config.fromEnvMap(init.environ_map);
+    var config = try S3Client.Config.fromEnvMap(env);
     config.region = "auto";
     config.endpoint = "https://<accountid>.r2.cloudflarestorage.com";
     config.virtual_host_style = false; // default
@@ -68,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
 
     // Fetch objects in parallel
     const keys = [_][]const u8{ "file1.txt", "file2.txt" };
-    const Future = std.Io.Future(S3Client.RequestError!S3Client.Response);
+    const Future = Io.Future(S3Client.RequestError!S3Client.Response);
     var futures: [keys.len]Future = undefined;
 
     for (keys, 0..) |key, i| {
@@ -187,4 +185,3 @@ Contributors are welcome, we aim for 100% integration test coverage and unit tes
 
 This project broadly follows the [ghostty ai usage policy](https://github.com/ghostty-org/ghostty/blob/main/).
 TL;DR You must disclose AI usage, obvious AI slop will be ignored.
-

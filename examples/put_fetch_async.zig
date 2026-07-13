@@ -3,19 +3,12 @@
 const std = @import("std");
 const S3Client = @import("s3").S3Client;
 const Io = std.Io;
-const Allocator = std.mem.Allocator;
 
 pub fn main(init: std.process.Init) !void {
-    const gpa = init.gpa;
+    const allocator = init.gpa;
+    const io = init.io;
+    const env = init.environ_map;
 
-    var threaded: Io.Threaded = .init(gpa, .{ .environ = init.minimal.environ });
-    defer threaded.deinit();
-    const io = threaded.io();
-
-    return runMain(gpa, io, init.environ_map);
-}
-
-fn runMain(allocator: Allocator, io: Io, env: *std.process.Environ.Map) !void {
     const bucket = env.get("S3_BUCKET") orelse {
         std.debug.print("S3_BUCKET not set\n", .{});
         return;

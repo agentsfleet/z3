@@ -1,15 +1,10 @@
 const std = @import("std");
 const S3Client = @import("s3").S3Client;
 const Io = std.Io;
-const Allocator = std.mem.Allocator;
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
-
-    var threaded: Io.Threaded = .init(allocator, .{ .environ = init.minimal.environ });
-    defer threaded.deinit();
-    const io = threaded.io();
-
+    const io = init.io;
     const env = init.environ_map;
 
     const access_key = env.get("S3_ACCESS_KEY_ID") orelse {

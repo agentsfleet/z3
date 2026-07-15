@@ -389,6 +389,7 @@ pub const listBuckets = ops.listBuckets;
 pub const createMultipartUpload = ops.createMultipartUpload;
 pub const uploadPart = ops.uploadPart;
 pub const completeMultipartUpload = ops.completeMultipartUpload;
+pub const abortMultipartUpload = ops.abortMultipartUpload;
 
 pub const GetFileError =
     @typeInfo(@typeInfo(@TypeOf(getObjectStream)).@"fn".return_type.?).error_union.error_set ||

@@ -289,6 +289,26 @@ pub fn completeMultipartUpload(
     return xml.parseCompleteMultipartUpload(self.allocator, resp.body);
 }
 
+/// Abort an in-progress multipart upload
+pub fn abortMultipartUpload(
+    self: *S3Client,
+    bucket: []const u8,
+    key: []const u8,
+    upload_id: []const u8,
+    options: S3Client.RequestOptions,
+) S3Client.RequestError!S3Client.Response {
+    const query_string = try buildMultipartQuery(self, .{ .upload_id = upload_id });
+    defer self.allocator.free(query_string);
+
+    var req = try request.prepareRequest(self, .DELETE, bucket, key, .{
+        .query = query_string,
+        .options = options,
+    });
+    defer req.deinit();
+
+    return request.executeRequest(self, &req);
+}
+
 /// DELETE object from S3
 pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
     var req = try request.prepareRequest(self, .DELETE, bucket, key, .{ .options = options });

@@ -212,7 +212,10 @@ pub fn uploadPart(
     part_number: u32,
     options: S3Client.RequestOptions,
 ) S3Client.RequestError!S3Client.Response {
-    const query_string = try std.fmt.allocPrint(self.allocator, "partNumber={d}&uploadId={s}", .{ part_number, upload_id });
+    const query_string = try buildMultipartQuery(self, .{
+        .upload_id = upload_id,
+        .part_number = part_number,
+    });
     defer self.allocator.free(query_string);
 
     var req = try request.prepareRequest(self, .PUT, bucket, key, .{
@@ -232,7 +235,7 @@ pub fn completeMultipartUpload(
     key: []const u8,
     options: S3Client.CompleteMultipartUploadOptions,
 ) S3Client.RequestError!types.CompleteMultipartUploadResult {
-    const query_string = try std.fmt.allocPrint(self.allocator, "uploadId={s}", .{options.upload_id});
+    const query_string = try buildMultipartQuery(self, .{ .upload_id = options.upload_id });
     defer self.allocator.free(query_string);
 
     var body = std.ArrayList(u8).empty;
@@ -394,6 +397,11 @@ const QueryParam = struct {
     value: []const u8,
 };
 
+const MultipartQueryOptions = struct {
+    upload_id: []const u8,
+    part_number: ?u32 = null,
+};
+
 fn appendEncodedQueryParam(self: *S3Client, params: *std.ArrayListUnmanaged(QueryParam), key: []const u8, value: []const u8) !void {
     const encoded_key = try internal.encodeQueryValue(self.allocator, key);
     errdefer self.allocator.free(encoded_key);
@@ -405,6 +413,56 @@ fn appendEncodedQueryParam(self: *S3Client, params: *std.ArrayListUnmanaged(Quer
         .key = encoded_key,
         .value = encoded_value,
     });
+}
+
+fn finishSortedQuery(self: *S3Client, params: *std.ArrayListUnmanaged(QueryParam)) ![]u8 {
+    std.sort.heap(QueryParam, params.items, {}, struct {
+        fn lessThan(_: void, a: QueryParam, b: QueryParam) bool {
+            if (std.mem.eql(u8, a.key, b.key)) {
+                return std.mem.lessThan(u8, a.value, b.value);
+            }
+            return std.mem.lessThan(u8, a.key, b.key);
+        }
+    }.lessThan);
+
+    var query = std.ArrayList(u8).empty;
+    errdefer query.deinit(self.allocator);
+
+    for (params.items, 0..) |item, i| {
+        if (i > 0) try query.append(self.allocator, '&');
+        try query.appendSlice(self.allocator, item.key);
+        try query.append(self.allocator, '=');
+        try query.appendSlice(self.allocator, item.value);
+    }
+
+    const out = try query.toOwnedSlice(self.allocator);
+    for (params.items) |item| {
+        self.allocator.free(item.key);
+        self.allocator.free(item.value);
+    }
+    params.deinit(self.allocator);
+    return out;
+}
+
+fn buildMultipartQuery(self: *S3Client, options: MultipartQueryOptions) ![]u8 {
+    var params = std.ArrayList(QueryParam).empty;
+    errdefer {
+        for (params.items) |item| {
+            self.allocator.free(item.key);
+            self.allocator.free(item.value);
+        }
+        params.deinit(self.allocator);
+    }
+
+    try appendEncodedQueryParam(self, &params, "uploadId", options.upload_id);
+
+    if (options.part_number) |part_number| {
+        var buf: [20]u8 = undefined;
+        const part_number_str = std.fmt.bufPrint(&buf, "{d}", .{part_number}) catch return error.RequestTooLong;
+        try appendEncodedQueryParam(self, &params, "partNumber", part_number_str);
+    }
+
+    return finishSortedQuery(self, &params);
 }
 
 fn buildListObjectsQuery(self: *S3Client, options: ListObjectsOptions) ![]u8 {
@@ -437,38 +495,35 @@ fn buildListObjectsQuery(self: *S3Client, options: ListObjectsOptions) ![]u8 {
         try appendEncodedQueryParam(self, &params, "max-keys", max_str);
     }
 
-    std.sort.heap(QueryParam, params.items, {}, struct {
-        fn lessThan(_: void, a: QueryParam, b: QueryParam) bool {
-            if (std.mem.eql(u8, a.key, b.key)) {
-                return std.mem.lessThan(u8, a.value, b.value);
-            }
-            return std.mem.lessThan(u8, a.key, b.key);
-        }
-    }.lessThan);
-
-    var query = std.ArrayList(u8).empty;
-    errdefer query.deinit(self.allocator);
-
-    for (params.items, 0..) |item, i| {
-        if (i > 0) try query.append(self.allocator, '&');
-        try query.appendSlice(self.allocator, item.key);
-        try query.append(self.allocator, '=');
-        try query.appendSlice(self.allocator, item.value);
-    }
-
-    const out = try query.toOwnedSlice(self.allocator);
-    for (params.items) |item| {
-        self.allocator.free(item.key);
-        self.allocator.free(item.value);
-    }
-    params.deinit(self.allocator);
-    return out;
+    return finishSortedQuery(self, &params);
 }
 
 fn buildCopySource(self: *S3Client, src_bucket: []const u8, src_key: []const u8) ![]u8 {
     const encoded_key = try internal.encodePath(self.allocator, src_key);
     defer self.allocator.free(encoded_key);
     return std.fmt.allocPrint(self.allocator, "/{s}/{s}", .{ src_bucket, encoded_key });
+}
+
+test "buildMultipartQuery encodes upload id and sorts params" {
+    var client = S3Client{
+        .allocator = std.testing.allocator,
+        .http_client = undefined,
+        .owns_http_client = false,
+        .config = .{
+            .access_key_id = "ak",
+            .secret_access_key = "sk",
+            .region = "us-east-1",
+            .endpoint = "https://example.com",
+        },
+    };
+
+    const query = try buildMultipartQuery(&client, .{
+        .upload_id = "my+upload/id",
+        .part_number = 3,
+    });
+    defer std.testing.allocator.free(query);
+
+    try std.testing.expectEqualStrings("partNumber=3&uploadId=my%2Bupload%2Fid", query);
 }
 
 test "buildListObjectsQuery supports prefix and continuation token" {

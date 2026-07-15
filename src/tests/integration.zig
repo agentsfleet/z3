@@ -8,6 +8,7 @@ const test_key = "test-object.txt";
 const test_content = "Hello from Zig S3 client test!";
 const test_meta_key = "test-object-meta.txt";
 const test_meta_content = "Hello with metadata";
+const test_abort_key = "test-abort-multipart.txt";
 
 const TestContext = struct {
     gpa: std.heap.DebugAllocator(.{}),
@@ -268,6 +269,28 @@ test "02e_putObjectMultipart" {
     defer complete_multipart_resp.deinit();
 
     std.log.info("=== DONE 02e_putObjectMultipart: Object Etag: {s} ===\n", .{complete_multipart_resp.etag});
+}
+
+// 2f. Abort multipart upload
+test "02f_abortMultipartUpload" {
+    std.log.info("=== START 02f_abortMultipartUpload ===", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+
+    var create_response = try ctx.client.createMultipartUpload(test_bucket, test_abort_key, .{});
+    defer create_response.deinit();
+
+    var abort_response = try ctx.client.abortMultipartUpload(
+        test_bucket,
+        test_abort_key,
+        create_response.upload_id,
+        .{},
+    );
+    defer abort_response.deinit();
+
+    try std.testing.expect(abort_response.http_head.status == .no_content or abort_response.http_head.status == .ok);
+    std.log.info("=== DONE 02f_abortMultipartUpload: {} ===\n", .{abort_response.http_head.status});
 }
 
 // 3. List buckets

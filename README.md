@@ -105,6 +105,7 @@ Use `S3Client.Config.fromEnvMap` for standard AWS environment credentials. For w
 - `createMultipartUpload(bucket, key, options)`
 - `uploadPart(bucket, key, body, upload_id, part_number, options)`
 - `completeMultipartUpload(bucket, key, options)`
+- `abortMultipartUpload(bucket, key, upload_id, options)`
 
 ### Bucket Operations
 - `listBuckets()`

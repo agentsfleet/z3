@@ -90,6 +90,20 @@ pub fn main(init: std.process.Init) !void {
 
 Use `S3Client.Config.fromEnvMap` for standard AWS environment credentials. For web identity, use `s3.sts.assumeRoleWithWebIdentity`, then pass the returned credentials to `S3Client.Config.fromStsCredentials`.
 
+## Response Errors
+
+Operations returning `S3Client.Response` expose common status errors and any S3 error details present in the response body:
+
+```zig
+response.expectSuccess() catch |err| {
+    std.debug.print("{s}: {s}\n", .{
+        response.s3ErrorCode() orelse @errorName(err),
+        response.s3ErrorMessage() orelse "request failed",
+    });
+    return err;
+};
+```
+
 ## Supported Operations
 
 ### Object Operations

@@ -9,6 +9,7 @@ const test_content = "Hello from Zig S3 client test!";
 const test_meta_key = "test-object-meta.txt";
 const test_meta_content = "Hello with metadata";
 const test_abort_key = "test-abort-multipart.txt";
+const test_missing_key = "test-missing-object.txt";
 
 const TestContext = struct {
     gpa: std.heap.DebugAllocator(.{}),
@@ -80,6 +81,22 @@ test "01b_headBucket" {
 
     try std.testing.expect(response.http_head.status == .ok);
     std.log.info("=== DONE 01b_headBucket: {} ===\n", .{response.http_head.status});
+}
+
+// 1c. Read S3 error details
+test "01c_getObjectError" {
+    std.log.info("=== START 01c_getObjectError ===", .{});
+
+    var ctx = try TestContext.init();
+    defer ctx.deinit();
+
+    var response = try ctx.client.getObject(test_bucket, test_missing_key, .{});
+    defer response.deinit();
+
+    try std.testing.expectError(error.NotFound, response.expectSuccess());
+    try std.testing.expect(response.s3ErrorCode() != null);
+    try std.testing.expect(response.s3ErrorMessage() != null);
+    std.log.info("=== DONE 01c_getObjectError: {s} ===\n", .{response.s3ErrorCode().?});
 }
 
 // 2. Put object

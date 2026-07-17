@@ -225,6 +225,41 @@ pub const Response = struct {
     body: []u8,
     allocator: Allocator,
 
+    pub const StatusError = error{
+        NotFound,
+        AccessDenied,
+        PreconditionFailed,
+        S3Error,
+    };
+
+    /// Return typed errors for common unsuccessful response statuses.
+    pub fn expectSuccess(self: *const Response) StatusError!void {
+        if (self.http_head.status.class() == .success) return;
+
+        return switch (self.http_head.status) {
+            .not_found => error.NotFound,
+            .unauthorized, .forbidden => error.AccessDenied,
+            .precondition_failed => error.PreconditionFailed,
+            else => error.S3Error,
+        };
+    }
+
+    /// Return the S3 error code from the response body, if present.
+    pub fn s3ErrorCode(self: *const Response) ?[]const u8 {
+        return extractBodyTag(self.body, "<Code>", "</Code>");
+    }
+
+    /// Return the S3 error message from the response body, if present.
+    pub fn s3ErrorMessage(self: *const Response) ?[]const u8 {
+        return extractBodyTag(self.body, "<Message>", "</Message>");
+    }
+
+    fn extractBodyTag(body: []const u8, open: []const u8, close: []const u8) ?[]const u8 {
+        const start = (std.mem.find(u8, body, open) orelse return null) + open.len;
+        const end = std.mem.findPos(u8, body, start, close) orelse return null;
+        return body[start..end];
+    }
+
     pub fn deinit(self: *Response) void {
         self.allocator.free(self.http_head.bytes);
         if (self.body.len > 0) {
@@ -466,4 +501,51 @@ test "Config.fromStsCredentials borrows STS credential fields" {
     try std.testing.expectEqualStrings("sk", config.secret_access_key);
     try std.testing.expectEqualStrings("token", config.session_token.?);
     try std.testing.expectEqualStrings("us-east-1", config.region);
+}
+
+test "Response.expectSuccess maps common response statuses" {
+    var body: [0]u8 = .{};
+    var response = try makeTestResponse("HTTP/1.1 200 OK\r\n\r\n", &body);
+
+    try response.expectSuccess();
+
+    response.http_head = try http.Client.Response.Head.parse("HTTP/1.1 404 Not Found\r\n\r\n");
+    try std.testing.expectError(error.NotFound, response.expectSuccess());
+
+    response.http_head = try http.Client.Response.Head.parse("HTTP/1.1 403 Forbidden\r\n\r\n");
+    try std.testing.expectError(error.AccessDenied, response.expectSuccess());
+
+    response.http_head = try http.Client.Response.Head.parse("HTTP/1.1 412 Precondition Failed\r\n\r\n");
+    try std.testing.expectError(error.PreconditionFailed, response.expectSuccess());
+
+    response.http_head = try http.Client.Response.Head.parse("HTTP/1.1 500 Internal Server Error\r\n\r\n");
+    try std.testing.expectError(error.S3Error, response.expectSuccess());
+}
+
+test "Response exposes S3 error code and message" {
+    var body = "<Error><Code>SlowDown</Code><Message>Reduce your request rate</Message></Error>".*;
+    const response = try makeTestResponse("HTTP/1.1 503 Service Unavailable\r\n\r\n", &body);
+
+    try std.testing.expectEqualStrings("SlowDown", response.s3ErrorCode().?);
+    try std.testing.expectEqualStrings("Reduce your request rate", response.s3ErrorMessage().?);
+}
+
+test "Response S3 error fields are optional" {
+    var body = "not an S3 error".*;
+    const response = try makeTestResponse("HTTP/1.1 500 Internal Server Error\r\n\r\n", &body);
+
+    try std.testing.expect(response.s3ErrorCode() == null);
+    try std.testing.expect(response.s3ErrorMessage() == null);
+}
+
+fn makeTestResponse(head: []const u8, body: []u8) !S3Client.Response {
+    return .{
+        .http_head = try http.Client.Response.Head.parse(head),
+        .s3_head = .{
+            .x_amz_header = .init(std.testing.allocator),
+            .allocator = std.testing.allocator,
+        },
+        .body = body,
+        .allocator = std.testing.allocator,
+    };
 }

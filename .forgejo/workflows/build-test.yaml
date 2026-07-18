@@ -5,20 +5,60 @@ on: [push]
 jobs:
   build:
     runs-on: codeberg-tiny
+    strategy:
+      fail-fast: false
+      matrix:
+        # min: build.zig.zon minimum_zig_version (0.16)
+        # master: latest dev from https://ziglang.org/download/index.json
+        channel: [min, master]
     steps:
       - uses: https://data.forgejo.org/actions/checkout@v4
+
+      - name: Resolve Zig version
+        id: zig
+        run: |
+          set -euo pipefail
+          case "${{ matrix.channel }}" in
+            min)
+              ZIG_VERSION=$(grep -oP '\.minimum_zig_version\s*=\s*"\K[^"]+' build.zig.zon)
+              # Stable releases live under /download/<version>/
+              ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+              ;;
+            master)
+              # Official JSON is easier than scraping the HTML download page.
+              # First "version" field is always master (latest dev).
+              # Write to a file first so pipefail does not trip on SIGPIPE from grep -m1.
+              curl -fsSL https://ziglang.org/download/index.json -o /tmp/zig-index.json
+              ZIG_VERSION=$(grep -m1 -oE '"version": *"[^"]+"' /tmp/zig-index.json \
+                | sed 's/.*"\([^"]*\)"/\1/')
+              # Master builds are published immediately under /builds/
+              ZIG_URL="https://ziglang.org/builds/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+              ;;
+            *)
+              echo "Unknown channel: ${{ matrix.channel }}" >&2
+              exit 1
+              ;;
+          esac
+          if [ -z "${ZIG_VERSION}" ] || [ -z "${ZIG_URL}" ]; then
+            echo "Failed to resolve Zig version for channel ${{ matrix.channel }}" >&2
+            exit 1
+          fi
+          echo "version=${ZIG_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "url=${ZIG_URL}" >> "$GITHUB_OUTPUT"
+          echo "Using Zig ${ZIG_VERSION} (${{ matrix.channel }})"
+          echo "Download: ${ZIG_URL}"
 
       - name: Setup Zig
         run: |
           set -euo pipefail
-          ZIG_VERSION=$(grep -oP '\.minimum_zig_version\s*=\s*"\K[^"]+' build.zig.zon)
+          ZIG_VERSION="${{ steps.zig.outputs.version }}"
+          ZIG_URL="${{ steps.zig.outputs.url }}"
           ZIG_DIR="zig-x86_64-linux-${ZIG_VERSION}"
-          ZIG_URL="https://zig.linus.dev/zig/${ZIG_DIR}.tar.xz"
           curl -fL "${ZIG_URL}" -o zig.tar.xz
           tar -xf zig.tar.xz
           echo "$PWD/${ZIG_DIR}" >> "$GITHUB_PATH"
-          
+
       - name: Run tests
-        run: zig build test integration-test
-
-
+        run: |
+          zig version
+          zig build test integration-test

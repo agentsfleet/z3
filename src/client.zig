@@ -9,6 +9,7 @@ const ops = @import("ops.zig");
 const request_types = @import("http/request_types.zig");
 const request = @import("http/request.zig");
 const sts = @import("auth/sts.zig");
+const xml = @import("xml.zig");
 const root = @import("root");
 
 pub const S3Client = @This();
@@ -225,7 +226,7 @@ pub const Response = struct {
     body: []u8,
     allocator: Allocator,
 
-    pub const StatusError = error{
+    pub const ServiceError = error{
         NotFound,
         AccessDenied,
         PreconditionFailed,
@@ -233,7 +234,7 @@ pub const Response = struct {
     };
 
     /// Return typed errors for common unsuccessful response statuses.
-    pub fn expectSuccess(self: *const Response) StatusError!void {
+    pub fn expectSuccess(self: *const Response) ServiceError!void {
         if (self.http_head.status.class() == .success) return;
 
         return switch (self.http_head.status) {
@@ -246,18 +247,12 @@ pub const Response = struct {
 
     /// Return the S3 error code from the response body, if present.
     pub fn s3ErrorCode(self: *const Response) ?[]const u8 {
-        return extractBodyTag(self.body, "<Code>", "</Code>");
+        return xml.extractTag(self.body, "Code");
     }
 
     /// Return the S3 error message from the response body, if present.
     pub fn s3ErrorMessage(self: *const Response) ?[]const u8 {
-        return extractBodyTag(self.body, "<Message>", "</Message>");
-    }
-
-    fn extractBodyTag(body: []const u8, open: []const u8, close: []const u8) ?[]const u8 {
-        const start = (std.mem.find(u8, body, open) orelse return null) + open.len;
-        const end = std.mem.findPos(u8, body, start, close) orelse return null;
-        return body[start..end];
+        return xml.extractTag(self.body, "Message");
     }
 
     pub fn deinit(self: *Response) void {

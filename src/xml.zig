@@ -6,7 +6,7 @@ const testing = std.testing;
 
 /// Extracts content between <tag ...> and </tag>.
 /// Handles potential attributes in the start tag.
-fn extractTag(content: []const u8, tag: []const u8) ?[]const u8 {
+pub fn extractTag(content: []const u8, tag: []const u8) ?[]const u8 {
     var buf: [128]u8 = undefined;
     const s_start = std.fmt.bufPrint(&buf, "<{s}", .{tag}) catch return null;
 

@@ -4,7 +4,7 @@ on: [push]
 
 jobs:
   build:
-    runs-on: codeberg-tiny
+    runs-on: codeberg-small
     strategy:
       fail-fast: false
       matrix:

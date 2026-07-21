@@ -149,7 +149,7 @@ pub const HeadObjectResult = struct {
         };
     }
 
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: *@This()) void {
         if (self.accept_ranges) |val| self.allocator.free(val);
         if (self.expiration) |val| self.allocator.free(val);
         if (self.last_modified) |val| self.allocator.free(val);
@@ -194,7 +194,7 @@ pub const HeadBucketResult = struct {
         };
     }
 
-    pub fn deinit(self: @This()) void {
+    pub fn deinit(self: *@This()) void {
         if (self.region) |r| self.allocator.free(r);
     }
 

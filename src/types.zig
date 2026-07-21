@@ -124,7 +124,7 @@ pub const ListBucketsResult = struct {
     }
 };
 
-const HeadObjectResult = struct {
+pub const HeadObjectResult = struct {
     accept_ranges: ?[]const u8 = null,
     expiration: ?[]const u8 = null,
     last_modified: ?[]const u8 = null,
@@ -133,18 +133,30 @@ const HeadObjectResult = struct {
     version_id: ?[]const u8 = null,
     delete_marker: ?[]const u8 = null,
     content_type: ?[]const u8 = null,
+    allocator: Allocator,
 
-    pub fn parseHeadObject(response: *S3Client.Response) !HeadObjectResult {
+    pub fn parseHeadObject(allocator: Allocator, response: *S3Client.Response) !HeadObjectResult {
         return .{
-            .accept_ranges = response.s3_head.accept_ranges,
-            .etag = response.s3_head.etag,
-            .last_modified = response.s3_head.last_modified,
-            .content_type = response.http_head.content_type,
+            .allocator = allocator,
+            .accept_ranges = if (response.s3_head.accept_ranges) |val| try allocator.dupe(u8, val) else null,
+            .etag = if (response.s3_head.etag) |val| try allocator.dupe(u8, val) else null,
+            .last_modified = if (response.s3_head.last_modified) |val| try allocator.dupe(u8, val) else null,
+            .content_type = if (response.http_head.content_type) |val| try allocator.dupe(u8, val) else null,
             .content_length = response.http_head.content_length,
-            .version_id = try response.s3_head.getAmzValue("version-id"),
-            .expiration = try response.s3_head.getAmzValue("expiration"),
-            .delete_marker = try response.s3_head.getAmzValue("delete-marker"),
+            .version_id = if (try response.s3_head.getAmzValue("version-id")) |val| try allocator.dupe(u8, val) else null,
+            .expiration = if (try response.s3_head.getAmzValue("expiration")) |val| try allocator.dupe(u8, val) else null,
+            .delete_marker = if (try response.s3_head.getAmzValue("delete-marker")) |val| try allocator.dupe(u8, val) else null,
         };
+    }
+
+    pub fn deinit(self: @This()) void {
+        if (self.accept_ranges) |val| self.allocator.free(val);
+        if (self.expiration) |val| self.allocator.free(val);
+        if (self.last_modified) |val| self.allocator.free(val);
+        if (self.etag) |val| self.allocator.free(val);
+        if (self.version_id) |val| self.allocator.free(val);
+        if (self.delete_marker) |val| self.allocator.free(val);
+        if (self.content_type) |val| self.allocator.free(val);
     }
 
     pub fn jsonStringify(self: *const HeadObjectResult, jws: anytype) !void {
@@ -169,15 +181,21 @@ const HeadObjectResult = struct {
     }
 };
 
-const HeadBucketResult = struct {
+pub const HeadBucketResult = struct {
     exists: bool = false,
     region: ?[]const u8 = null,
+    allocator: Allocator,
 
-    pub fn parseBody(resp: *S3Client.Response) !HeadBucketResult {
+    pub fn parseHeadBucket(allocator: Allocator, resp: *S3Client.Response) !HeadBucketResult {
         return .{
+            .allocator = allocator,
             .exists = if (resp.http_head.status == .ok) true else false,
-            .region = try resp.s3_head.getAmzValue("region"),
+            .region = if (try resp.s3_head.getAmzValue("region")) |val| try allocator.dupe(u8, val) else null,
         };
+    }
+
+    pub fn deinit(self: @This()) void {
+        if (self.region) |r| self.allocator.free(r);
     }
 
     pub fn jsonStringify(self: *const HeadBucketResult, jws: anytype) !void {

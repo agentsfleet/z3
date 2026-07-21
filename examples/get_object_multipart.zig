@@ -64,8 +64,7 @@ pub fn main(init: std.process.Init) !void {
     // Be sure its there
     var head_resp = try client.headObject(bucket, key, .{});
     defer head_resp.deinit();
-
-    std.log.info("HeadObject status: {}", .{head_resp.http_head.status});
+    std.log.info("Found object etag: {?s}", .{head_resp.etag});
 
     std.log.info("Start multipart download", .{});
 

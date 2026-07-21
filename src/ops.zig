@@ -318,20 +318,26 @@ pub fn deleteObject(self: *S3Client, bucket: []const u8, key: []const u8, option
 }
 
 /// HEAD object (get metadata)
-pub fn headObject(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
+pub fn headObject(self: *S3Client, bucket: []const u8, key: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!types.HeadObjectResult {
     var req = try request.prepareRequest(self, .HEAD, bucket, key, .{ .options = options });
     defer req.deinit();
 
-    return request.executeRequest(self, &req);
+    var resp = try request.executeRequest(self, &req);
+    defer resp.deinit();
+
+    return types.HeadObjectResult.parseHeadObject(self.allocator, &resp);
 }
 
 /// HeadBucket API Call: get basic information about Bucket, in the first place if the
 /// bucket exists at all.
-pub fn headBucket(self: *S3Client, bucket: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!S3Client.Response {
+pub fn headBucket(self: *S3Client, bucket: []const u8, options: S3Client.RequestOptions) S3Client.RequestError!types.HeadBucketResult {
     var req = try request.prepareRequest(self, .HEAD, bucket, null, .{ .options = options });
     defer req.deinit();
 
-    return request.executeRequest(self, &req);
+    var resp = try request.executeRequest(self, &req);
+    defer resp.deinit();
+
+    return types.HeadBucketResult.parseHeadBucket(self.allocator, &resp);
 }
 
 /// List objects in bucket

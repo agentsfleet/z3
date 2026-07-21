@@ -338,6 +338,7 @@ pub const ObjectStream = struct {
 pub const S3Head = struct {
     etag: ?[]const u8 = null,
     last_modified: ?[]const u8 = null,
+    accept_ranges: ?[]const u8 = null,
     x_amz_header: std.hash_map.StringHashMap([]const u8),
     allocator: Allocator,
 
@@ -361,6 +362,8 @@ pub const S3Head = struct {
                 s3_head.etag = header.value;
             } else if (std.ascii.eqlIgnoreCase(header.name, "last-modified")) {
                 s3_head.last_modified = header.value;
+            } else if (std.ascii.eqlIgnoreCase(header.name, "accept-ranges")) {
+                s3_head.accept_ranges = header.value;
             }
         }
 

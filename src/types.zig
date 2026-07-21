@@ -1,6 +1,7 @@
 //! S3 response types and XML parsing utilities
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const S3Client = @import("client.zig").S3Client;
 
 /// Information about a bucket
 pub const BucketInfo = struct {
@@ -13,6 +14,15 @@ pub const BucketInfo = struct {
     pub fn deinit(self: *BucketInfo) void {
         self.allocator.free(self.name);
         self.allocator.free(self.creation_date);
+    }
+
+    pub fn jsonStringify(self: *const @This(), jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("Name");
+        try jws.write(self.name);
+        try jws.objectField("CreationDate");
+        try jws.write(self.creation_date);
+        try jws.endObject();
     }
 };
 
@@ -32,6 +42,19 @@ pub const ObjectInfo = struct {
         self.allocator.free(self.key);
         self.allocator.free(self.last_modified);
         self.allocator.free(self.etag);
+    }
+
+    pub fn jsonStringify(self: *const @This(), jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("Key");
+        try jws.write(self.key);
+        try jws.objectField("Size");
+        try jws.write(self.size);
+        try jws.objectField("LastModified");
+        try jws.write(self.last_modified);
+        try jws.objectField("ETag");
+        try jws.write(self.etag);
+        try jws.endObject();
     }
 };
 
@@ -58,6 +81,14 @@ pub const ListObjectsResult = struct {
             self.allocator.free(token);
         }
     }
+
+    pub fn jsonStringify(self: *const @This(), jws: anytype) !void {
+        try jws.beginObject();
+        try jws.beginArray();
+        try jws.write(self.objects);
+        try jws.endArray();
+        try jws.endObject();
+    }
 };
 
 /// Result of listing buckets
@@ -74,6 +105,88 @@ pub const ListBucketsResult = struct {
         self.allocator.free(self.buckets);
         if (self.owner_id) |id| self.allocator.free(id);
         if (self.owner_display_name) |name| self.allocator.free(name);
+    }
+
+    pub fn jsonStringify(self: *const @This(), jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("Buckets");
+        try jws.beginArray();
+        try jws.write(self.buckets);
+        try jws.endArray();
+        try jws.objectField("Owner");
+        try jws.beginObject();
+        try jws.objectField("DisplayName");
+        try jws.write(self.owner_display_name);
+        try jws.objectField("Id");
+        try jws.write(self.owner_id);
+        try jws.endObject();
+        try jws.endObject();
+    }
+};
+
+const HeadObjectResult = struct {
+    accept_ranges: ?[]const u8 = null,
+    expiration: ?[]const u8 = null,
+    last_modified: ?[]const u8 = null,
+    content_length: ?u64 = null,
+    etag: ?[]const u8 = null,
+    version_id: ?[]const u8 = null,
+    delete_marker: ?[]const u8 = null,
+    content_type: ?[]const u8 = null,
+
+    pub fn parseHeadObject(response: *S3Client.Response) !HeadObjectResult {
+        return .{
+            .accept_ranges = response.s3_head.accept_ranges,
+            .etag = response.s3_head.etag,
+            .last_modified = response.s3_head.last_modified,
+            .content_type = response.http_head.content_type,
+            .content_length = response.http_head.content_length,
+            .version_id = try response.s3_head.getAmzValue("version-id"),
+            .expiration = try response.s3_head.getAmzValue("expiration"),
+            .delete_marker = try response.s3_head.getAmzValue("delete-marker"),
+        };
+    }
+
+    pub fn jsonStringify(self: *const HeadObjectResult, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("AcceptRanges");
+        try jws.write(self.accept_ranges);
+        try jws.objectField("Expiration");
+        try jws.write(self.expiration);
+        try jws.objectField("LastModified");
+        try jws.write(self.last_modified);
+        try jws.objectField("ContentLength");
+        try jws.write(self.content_length);
+        try jws.objectField("ETag");
+        try jws.write(self.etag);
+        try jws.objectField("VersionId");
+        try jws.write(self.version_id);
+        try jws.objectField("DeleteMarker");
+        try jws.write(self.delete_marker);
+        try jws.objectField("ContentType");
+        try jws.write(self.content_type);
+        try jws.endObject();
+    }
+};
+
+const HeadBucketResult = struct {
+    exists: bool = false,
+    region: ?[]const u8 = null,
+
+    pub fn parseBody(resp: *S3Client.Response) !HeadBucketResult {
+        return .{
+            .exists = if (resp.http_head.status == .ok) true else false,
+            .region = try resp.s3_head.getAmzValue("region"),
+        };
+    }
+
+    pub fn jsonStringify(self: *const HeadBucketResult, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("Exists");
+        try jws.write(self.exists);
+        try jws.objectField("Region");
+        try jws.write(self.region);
+        try jws.endObject();
     }
 };
 

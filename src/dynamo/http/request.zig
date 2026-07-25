@@ -3,8 +3,9 @@ const std = @import("std");
 const http = std.http;
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
-const internal = @import("../internal.zig");
-const signing = @import("../auth/signing.zig");
+const lib = @import("lib");
+const internal = lib.internal;
+const signing = lib.signing;
 const types = @import("../types.zig");
 
 pub const ClientConfig = struct {
@@ -118,7 +119,7 @@ fn sleepBackoff(http_client: *http.Client, options: types.RequestOptions, attemp
     else
         base +| jitter;
     const ms = if (interval == 0) @as(u64, 1) else interval;
-    http_client.io.sleep(.fromMilliseconds(ms), .awake) catch {};
+    http_client.io.sleep(.fromMilliseconds(@intCast(ms)), .awake) catch {};
 }
 
 /// Execute a signed DynamoDB request with whole-request retries.

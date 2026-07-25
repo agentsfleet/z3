@@ -4,7 +4,8 @@ const Io = std.Io;
 const Allocator = std.mem.Allocator;
 const xml = @import("xml.zig");
 const types = @import("types.zig");
-const internal = @import("internal.zig");
+const lib = @import("lib");
+const internal = lib.internal;
 const request = @import("http/request.zig");
 const S3Client = @import("client.zig").S3Client;
 

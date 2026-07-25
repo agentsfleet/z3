@@ -1,10 +1,11 @@
-//! zdb: minimal DynamoDB client for Zig
+//! Minimal DynamoDB client for Zig
 const std = @import("std");
+const lib = @import("lib");
 
 pub const Client = @import("client.zig").Client;
 pub const types = @import("types.zig");
 pub const attr = @import("attr.zig");
-pub const sts = @import("auth/sts.zig");
+pub const sts = lib.sts;
 
 pub const free = attr.free;
 pub const encodeItem = attr.encodeItem;
@@ -26,7 +27,6 @@ test {
     _ = @import("attr.zig");
     _ = @import("types.zig");
     _ = @import("http/request.zig");
-    _ = @import("auth/signing.zig");
     _ = sts;
-    _ = @import("internal.zig");
+    _ = lib;
 }

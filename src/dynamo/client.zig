@@ -8,7 +8,8 @@ const Allocator = std.mem.Allocator;
 const attr = @import("attr.zig");
 const types = @import("types.zig");
 const request = @import("http/request.zig");
-const sts = @import("auth/sts.zig");
+const lib = @import("lib");
+const sts = lib.sts;
 const ops = @import("ops.zig");
 
 pub const Client = @This();
@@ -143,9 +144,8 @@ config: Config,
 test {
     _ = @import("ops.zig");
     _ = @import("http/request.zig");
-    _ = @import("auth/signing.zig");
-    _ = @import("internal.zig");
     _ = @import("attr.zig");
+    _ = lib;
 }
 
 test "Config.fromEnvMap reads credentials and optional endpoint" {

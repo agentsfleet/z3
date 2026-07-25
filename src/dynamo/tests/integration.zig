@@ -13,8 +13,8 @@
 //! Optional endpoint (first match): `DYNAMODB_ENDPOINT` → `AWS_ENDPOINT_URL_DYNAMODB` → `AWS_ENDPOINT_URL`
 //! Optional table name: `ZDB_TEST_TABLE` (default `zdb-integration-test`)
 const std = @import("std");
-const zdb = @import("zdb");
-const Client = zdb.Client;
+const dynamo = @import("dynamo");
+const Client = dynamo.Client;
 
 const test_table = "zdb-integration-test";
 
@@ -151,7 +151,7 @@ test "03_get" {
     }, .{});
     try std.testing.expect(got != null);
     var item = got.?;
-    defer zdb.free(ctx.gpa.allocator(), &item);
+    defer dynamo.free(ctx.gpa.allocator(), &item);
 
     try std.testing.expectEqualStrings("acme", item.customer_id);
     try std.testing.expectEqualStrings("42", item.order_id);

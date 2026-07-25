@@ -1,5 +1,6 @@
 const std = @import("std");
-const internal = @import("../internal.zig");
+const lib = @import("lib");
+const internal = lib.internal;
 const S3Client = @import("../client.zig").S3Client;
 
 /// Split an URL into its parts and return scheme and host as single strings.
@@ -81,6 +82,28 @@ pub fn getServiceHost(self: *S3Client) ![]u8 {
         return self.allocator.dupe(u8, endpointHostSlice(endpoint).host);
     }
     return std.fmt.allocPrint(self.allocator, "s3.{s}.amazonaws.com", .{self.config.region});
+}
+
+/// Canonical URI for SigV4 (path-style vs virtual-host-style).
+/// Caller owns the returned slice.
+pub fn canonicalUri(self: *S3Client, bucket: ?[]const u8, key: ?[]const u8) ![]u8 {
+    const path_style = self.config.endpoint != null and !self.config.virtual_host_style;
+
+    if (bucket) |b| {
+        if (key) |k| {
+            const encoded_key = try internal.encodePath(self.allocator, k);
+            defer self.allocator.free(encoded_key);
+            if (path_style) {
+                return std.fmt.allocPrint(self.allocator, "/{s}/{s}", .{ b, encoded_key });
+            }
+            return std.fmt.allocPrint(self.allocator, "/{s}", .{encoded_key});
+        }
+        if (path_style) {
+            return std.fmt.allocPrint(self.allocator, "/{s}", .{b});
+        }
+        return try self.allocator.dupe(u8, "/");
+    }
+    return try self.allocator.dupe(u8, "/");
 }
 
 test "buildUrl percent-encodes object keys" {

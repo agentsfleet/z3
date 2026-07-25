@@ -1,10 +1,11 @@
 //! Zig S3 Client Library
 //! Async S3 client built on std.http.Client with Io interface
 const std = @import("std");
+const lib = @import("lib");
 
 pub const S3Client = @import("client.zig").S3Client;
 pub const types = @import("types.zig");
-pub const sts = @import("auth/sts.zig");
+pub const sts = lib.sts;
 const request = @import("http/request.zig");
 
 // Re-export commonly used types

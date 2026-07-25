@@ -2,7 +2,7 @@ const std = @import("std");
 const http = std.http;
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
-const internal = @import("../internal.zig");
+const internal = @import("internal.zig");
 
 pub const Error = error{
     CredentialFetchFailed,
@@ -19,7 +19,7 @@ pub const Error = error{
 pub const AssumeRoleWithWebIdentityOptions = struct {
     role_arn: []const u8,
     web_identity_token_file: []const u8,
-    role_session_name: []const u8 = "z3-session",
+    role_session_name: []const u8 = "aws-session",
     region: ?[]const u8 = null,
     endpoint: ?[]const u8 = null,
     max_body_size: usize = 1024 * 1024,

@@ -1,8 +1,8 @@
-//! AWS Signature Version 4 for DynamoDB (JSON services).
+//! AWS Signature Version 4 AWS Signature Version 4 (service and URI parameterized).
 //! Service name is parameterized; URI is typically `/`.
 const std = @import("std");
 const crypto = std.crypto;
-const internal = @import("../internal.zig");
+const internal = @import("internal.zig");
 
 pub const HeaderToSign = struct {
     name: []const u8,

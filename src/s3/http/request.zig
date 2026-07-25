@@ -1,8 +1,9 @@
 const std = @import("std");
 const http = std.http;
 const Io = std.Io;
-const internal = @import("../internal.zig");
-const signing = @import("../auth/signing.zig");
+const lib = @import("lib");
+const internal = lib.internal;
+const signing = lib.signing;
 const url = @import("url.zig");
 const request_types = @import("request_types.zig");
 const S3Client = @import("../client.zig").S3Client;
@@ -181,12 +182,18 @@ pub fn prepareRequest(
         }
     }
 
+    const canonical_uri = try url.canonicalUri(self, bucket, key);
+    defer self.allocator.free(canonical_uri);
+
     const auth_header = try signing.signRequest(
-        self,
+        self.allocator,
+        self.config.access_key_id,
+        self.config.secret_access_key,
+        self.config.region,
+        "s3",
         @tagName(method),
-        bucket,
-        key,
-        params.query,
+        canonical_uri,
+        params.query orelse "",
         headers_to_sign.items,
     );
     defer self.allocator.free(auth_header);

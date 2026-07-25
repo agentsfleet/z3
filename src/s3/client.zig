@@ -8,7 +8,8 @@ const Allocator = std.mem.Allocator;
 const ops = @import("ops.zig");
 const request_types = @import("http/request_types.zig");
 const request = @import("http/request.zig");
-const sts = @import("auth/sts.zig");
+const lib = @import("lib");
+const sts = lib.sts;
 const xml = @import("xml.zig");
 const root = @import("root");
 
@@ -443,9 +444,8 @@ config: Config,
 test {
     _ = @import("ops.zig");
     _ = @import("http/request.zig");
-    _ = @import("auth/signing.zig");
     _ = @import("http/url.zig");
-    _ = @import("internal.zig");
+    _ = lib;
 }
 
 test "Config.fromEnvMap reads credentials, session token, and region" {

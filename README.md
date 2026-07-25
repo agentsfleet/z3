@@ -1,193 +1,54 @@
-# z3 - Async S3 Client for Zig
+# aws_zig — AWS clients for Zig
 
-`z3` is a lightweight, high-performance, and asynchronous S3 client for Zig. It is built directly on `std.http.Client` and utilizes the `std.Io` interface for efficient parallel operations. It has been primarily tested with Cloudflare R2 but is designed to work with any S3-compatible service.
+Pure Zig clients for **S3** and **DynamoDB**, built on `std.http.Client` and `std.Io`. Shared SigV4 signing and STS live in an internal `lib` module.
 
-## Toolchain
-
-This project targets minimum zig `0.16.0`.
-
-## Features
-
-- **Async & Parallel**: Leverages Zig's `std.Io` for non-blocking, parallel S3 operations.
-- **Pure Zig**: Zero external dependencies beyond the Zig standard library.
-- **S3 Compatible**: Works with AWS S3, Cloudflare R2, MinIO, and other S3-compatible storage services.
-- **AWS Environment Credentials**: Reads standard AWS access key, session token, and region variables.
-- **STS Web Identity**: Supports `AssumeRoleWithWebIdentity` credentials.
-- **Comprehensive API**: Supports GET, PUT, DELETE, HEAD, Copy, Bucket management, and file-based uploads/downloads.
-- **Streaming**: Includes streaming APIs for object downloads and direct-to-file transfers.
-- **XML Parsing**: Built-in support for parsing S3 XML responses for object listings and error handling.
-- **Virtual-Host-Style Requests** Supports both: legacy path-style requests, as well as virtual-host-style requests.
-- **Multipart Upload** Upload big files in chunks (at least 5MB per chunk). Check the [`put-multipart` example](./examples/put_object_multipart.zig) for how to do this asynchronous.
-- **Progress State** Track progress for put/getObject operations, e.g. for rendering a progress bar etc. Check the [`track-progress` example](./examples/track_progress.zig) for a show case. 
-
-## Prerequisites
-
-- **Zig `0.16.0`**: This library uses modern Zig features and the latest stable `std.http` and `std.Io` APIs.
+| | |
+|--|--|
+| Package name | **`aws_zig`** |
+| Modules | **`s3`**, **`dynamo`** |
+| Minimum Zig | **0.17** |
 
 ## Installation
 
-Add `z3` to your `build.zig.zon`:
-
 ```bash
 zig fetch --save git+https://codeberg.org/fellowtraveler/z3.git
+# after repo rename: git+https://codeberg.org/fellowtraveler/aws_zig.git
 ```
 
-Then in your `build.zig`:
-
 ```zig
-const s3 = b.dependency("z3", .{
+const aws = b.dependency("aws_zig", .{
     .target = target,
     .optimize = optimize,
 });
-exe.root_module.addImport("s3", s3.module("s3"));
+exe.root_module.addImport("s3", aws.module("s3"));
+exe.root_module.addImport("dynamo", aws.module("dynamo")); // optional
 ```
 
-## Quick Start
+## Modules
 
-Here is a simple example of fetching objects in parallel:
+| Module | Role | Docs |
+|--------|------|------|
+| `s3` | Async S3-compatible client (AWS S3, R2, MinIO, …) | [`src/s3/README.md`](src/s3/README.md) |
+| `dynamo` | Minimal DynamoDB client | [`src/dynamo/README.md`](src/dynamo/README.md) |
+| `lib` | Internal shared AWS primitives (not required by consumers) | — |
 
-```zig
-const std = @import("std");
-const S3Client = @import("s3").S3Client;
-const Io = std.Io;
-
-pub fn main(init: std.process.Init) !void {
-    const allocator = init.gpa;
-    const io = init.io;
-    const env = init.environ_map;
-
-    var config = try S3Client.Config.fromEnvMap(env);
-    config.region = "auto";
-    config.endpoint = "https://<accountid>.r2.cloudflarestorage.com";
-    config.virtual_host_style = false; // default
-
-    var client = try S3Client.init(allocator, config, .{ .io = io });
-    defer client.deinit();
-
-    // Fetch objects in parallel
-    const keys = [_][]const u8{ "file1.txt", "file2.txt" };
-    const Future = Io.Future(S3Client.RequestError!S3Client.Response);
-    var futures: [keys.len]Future = undefined;
-
-    for (keys, 0..) |key, i| {
-        futures[i] = io.async(S3Client.getObject, .{ &client, "my-bucket", key, .{} });
-    }
-
-    // Await results
-    for (&futures, 0..) |*future, i| {
-        if (future.await(io)) |res| {
-            var response = res;
-            defer response.deinit();
-            std.debug.print("Fetched {s}: {s}\n", .{ keys[i], response.body });
-        } else |err| {
-            std.debug.print("Error fetching {s}: {}\n", .{ keys[i], err });
-        }
-    }
-}
-```
-
-## Authentication
-
-Use `S3Client.Config.fromEnvMap` for standard AWS environment credentials. For web identity, use `s3.sts.assumeRoleWithWebIdentity`, then pass the returned credentials to `S3Client.Config.fromStsCredentials`.
-
-## Response Errors
-
-Operations returning `S3Client.Response` expose common status errors and any S3 error details present in the response body:
-
-```zig
-response.expectSuccess() catch |err| {
-    std.debug.print("{s}: {s}\n", .{
-        response.s3ErrorCode() orelse @errorName(err),
-        response.s3ErrorMessage() orelse "request failed",
-    });
-    return err;
-};
-```
-
-## Supported Operations
-
-### Object Operations
-- `getObject(bucket, key, options)`
-- `getObjectStream(bucket, key, options)`
-- `getFile(bucket, key, dest_path, options)`
-- `putObject(bucket, key, body, options)`
-- `putFile(bucket, key, src_path, options)`
-- `deleteObject(bucket, key, options)`
-- `headObject(bucket, key)`
-- `copyObject(src_bucket, src_key, dst_bucket, dst_key)`
-- `listObjects(bucket, options)`
-- `createMultipartUpload(bucket, key, options)`
-- `uploadPart(bucket, key, body, upload_id, part_number, options)`
-- `completeMultipartUpload(bucket, key, options)`
-- `abortMultipartUpload(bucket, key, upload_id, options)`
-
-### Bucket Operations
-- `listBuckets()`
-- `headBucket(bucket)`
-- `createBucket(bucket)`
-- `deleteBucket(bucket)`
-
-## Custom Metadata
-
-Attach `x-amz-meta-*` headers on PUT requests:
-
-```zig
-const metadata = [_]S3Client.Metadata{
-    .{ .name = "color", .value = "blue" },
-    .{ .name = "owner", .value = "zig-test" },
-};
-
-var response = try client.putObject("my-bucket", "meta.txt", "hello", .{
-    .metadata = &metadata,
-});
-defer response.deinit();
-```
-
-Metadata is also supported on `putFile` via `PutFileOptions.metadata`.
-
-## ListObjects Pagination
-
-Use `listObjects` with continuation tokens:
-
-```zig
-var first = try client.listObjects("my-bucket", .{
-    .max_keys = 100,
-});
-defer first.deinit();
-
-if (first.is_truncated and first.next_continuation_token != null) {
-    var next = try client.listObjects("my-bucket", .{
-        .continuation_token = first.next_continuation_token.?,
-        .max_keys = 100,
-    });
-    defer next.deinit();
-}
-```
-
-## Current Limitations
-
-`z3` is currently a work-in-progress. The following features are not implemented, and may not be unless requested:
-
-- **Streaming Upload Signatures**: `putFile` requires a seekable file to compute content length and SHA-256; chunked signing is not yet implemented.
-- **Presigned URLs**: Support for generating temporary GET/PUT URLs.
-- **Advanced Authentication**: Support for ECS/EC2 IAM role discovery and AWS profile-based credential discovery.
-
-## Running Examples
-
-The repository includes runnable examples in `examples/`:
-
-- `examples/put_fetch_async.zig`
-- `examples/get_object_multipart.zig`
-- `examples/put_object_multipart.zig`
-- `examples/track_progress.zig`
-
-Run them with:
+## Tests
 
 ```bash
-zig build example-put-fetch-async
-zig build example-get-multipart
-zig build example-put-multipart
-zig build example-track-progress -- <FILE>
+zig build test
+zig build integration-test-s3      # needs S3 credentials / endpoint
+zig build integration-test-dynamo  # needs Dynamo credentials; skips if missing
+zig build integration-test         # both
+```
+
+## Layout
+
+```
+src/lib/      shared SigV4, STS, helpers
+src/s3/       S3 client (+ README)
+src/dynamo/   DynamoDB client (+ README)
+examples/s3/
+examples/dynamo/
 ```
 
 ## License
@@ -198,5 +59,5 @@ MIT
 
 Contributors are welcome, we aim for 100% integration test coverage and unit tests where useful.
 
-This project broadly follows the [ghostty ai usage policy](https://github.com/ghostty-org/ghostty/blob/main/).
+This project broadly follows the [ghostty AI usage policy](https://github.com/ghostty-org/ghostty/blob/main/).
 TL;DR You must disclose AI usage, obvious AI slop will be ignored.

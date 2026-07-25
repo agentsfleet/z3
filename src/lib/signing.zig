@@ -1,5 +1,4 @@
-//! AWS Signature Version 4 AWS Signature Version 4 (service and URI parameterized).
-//! Service name is parameterized; URI is typically `/`.
+//! AWS Signature Version 4 (service and URI parameterized).
 const std = @import("std");
 const crypto = std.crypto;
 const internal = @import("internal.zig");

@@ -1,7 +1,7 @@
 //! Minimal put / get / queryHash example.
 //! Requires AWS credentials and a table (or DynamoDB Local via DYNAMODB_ENDPOINT).
 const std = @import("std");
-const zdb = @import("zdb");
+const dynamo = @import("dynamo");
 
 const Order = struct {
     customer_id: []const u8,
@@ -16,12 +16,12 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const env = init.environ_map;
 
-    const config = try zdb.Client.Config.fromEnvMap(env);
+    const config = try dynamo.Client.Config.fromEnvMap(env);
     // Override endpoint for DynamoDB Local:
-    // var config = try zdb.Client.Config.fromEnvMap(env);
+    // var config = try dynamo.Client.Config.fromEnvMap(env);
     // config.endpoint = "http://localhost:8000";
 
-    var client = try zdb.Client.init(allocator, config, .{ .io = io });
+    var client = try dynamo.Client.init(allocator, config, .{ .io = io });
     defer client.deinit();
 
     const table = "orders";
@@ -39,7 +39,7 @@ pub fn main(init: std.process.Init) !void {
         .order_id = "42",
     }, .{})) |item| {
         var owned = item;
-        defer zdb.free(allocator, &owned);
+        defer dynamo.free(allocator, &owned);
         std.debug.print("got order {s}/{s} total={d} status={s}\n", .{
             owned.customer_id,
             owned.order_id,

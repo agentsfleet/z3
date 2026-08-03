@@ -322,10 +322,9 @@ pub fn headObject(self: *S3Client, bucket: []const u8, key: []const u8, options:
     var req = try request.prepareRequest(self, .HEAD, bucket, key, .{ .options = options });
     defer req.deinit();
 
-    var resp = try request.executeRequest(self, &req);
-    defer resp.deinit();
+    const resp = try request.executeRequest(self, &req);
 
-    return types.HeadObjectResult.parseHeadObject(self.allocator, &resp);
+    return types.HeadObjectResult.parseHeadObject(self.allocator, resp);
 }
 
 /// HeadBucket API Call: get basic information about Bucket, in the first place if the
@@ -334,10 +333,9 @@ pub fn headBucket(self: *S3Client, bucket: []const u8, options: S3Client.Request
     var req = try request.prepareRequest(self, .HEAD, bucket, null, .{ .options = options });
     defer req.deinit();
 
-    var resp = try request.executeRequest(self, &req);
-    defer resp.deinit();
+    const resp = try request.executeRequest(self, &req);
 
-    return types.HeadBucketResult.parseHeadBucket(self.allocator, &resp);
+    return types.HeadBucketResult.parseHeadBucket(self.allocator, resp);
 }
 
 /// List objects in bucket
@@ -360,17 +358,11 @@ pub fn listObjects(self: *S3Client, bucket: []const u8, options: ListObjectsOpti
     defer req.deinit();
 
     var response = try request.executeRequest(self, &req);
-    defer response.deinit();
-
-    if (response.http_head.status != .ok) {
-        var s3_err = xml.parseS3Error(self.allocator, response.body) catch {
-            return error.RequestFailed;
-        };
-        defer s3_err.deinit();
-        return error.S3Error;
+    {
+        errdefer response.deinit();
+        try response.expectSuccess();
     }
-
-    return xml.parseListObjects(self.allocator, response.body);
+    return xml.parseListObjects(self.allocator, &response);
 }
 
 /// Create a new bucket
@@ -405,17 +397,11 @@ pub fn listBuckets(self: *S3Client) S3Client.RequestError!types.ListBucketsResul
     defer req.deinit();
 
     var response = try request.executeRequest(self, &req);
-    defer response.deinit();
-
-    if (response.http_head.status != .ok) {
-        var s3_err = xml.parseS3Error(self.allocator, response.body) catch {
-            return error.RequestFailed;
-        };
-        defer s3_err.deinit();
-        return error.S3Error;
+    {
+        errdefer response.deinit();
+        try response.expectSuccess();
     }
-
-    return xml.parseListBuckets(self.allocator, response.body);
+    return xml.parseListBuckets(self.allocator, &response);
 }
 
 const QueryParam = struct {

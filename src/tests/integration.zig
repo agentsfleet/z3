@@ -77,10 +77,10 @@ test "01b_headBucket" {
 
     var response = try ctx.client.headBucket(test_bucket, .{});
     defer response.deinit();
-    std.log.info("  Bucket exists: {}\n", .{response.exists});
+    std.log.info("  Got response: {}\n", .{response.http_response.http_head.status});
 
     try std.testing.expect(response.exists);
-    std.log.info("=== DONE 01b_headBucket: {s} ===\n", .{if (response.exists) "ok" else "bad"});
+    std.log.info("=== DONE 01b_headBucket: {} ===\n", .{response.http_response.http_head.status});
 }
 
 // 1c. Read S3 error details
@@ -114,7 +114,7 @@ test "02_putObject" {
     std.log.info("  Additional HeadObject check...", .{});
     var head_result = try ctx.client.headObject(test_bucket, test_key, .{});
     defer head_result.deinit();
-    std.log.info("  Found etag: {?s}", .{head_result.etag});
+    std.log.info("  Got response: {}", .{head_result.http_response.http_head.status});
 
     try std.testing.expect(response.http_head.status == .ok or response.http_head.status == .created);
     std.log.info("=== DONE 02_putObject: {} ===\n", .{response.http_head.status});

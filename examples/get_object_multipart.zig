@@ -50,6 +50,11 @@ pub fn main(init: std.process.Init) !void {
 
     const part_size: usize = 50; // Size of download part in bytes
 
+    var head_bucket = try client.headBucket(bucket, .{});
+    defer head_bucket.deinit();
+
+    std.log.info("HeadBucket response: {t}", .{head_bucket.http_response.http_head.status});
+
     // Put the content as object to your S3 storage
     var put_resp = try client.putObject(bucket, key, content, .{
         .request = .{
@@ -64,7 +69,7 @@ pub fn main(init: std.process.Init) !void {
     // Be sure its there
     var head_resp = try client.headObject(bucket, key, .{});
     defer head_resp.deinit();
-    std.log.info("Found object etag: {?s}", .{head_resp.etag});
+    std.log.info("HeadObject response: {t}", .{head_resp.http_response.http_head.status});
 
     std.log.info("Start multipart download", .{});
 

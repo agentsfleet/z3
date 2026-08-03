@@ -3,6 +3,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const types = @import("types.zig");
 const testing = std.testing;
+const Response = @import("client.zig").S3Client.Response;
 
 /// Extracts content between <tag ...> and </tag>.
 /// Handles potential attributes in the start tag.
@@ -64,13 +65,18 @@ pub fn parseS3Error(allocator: Allocator, body: []const u8) !types.S3Error {
     };
 }
 
-/// Parse ListObjectsV2 response
-pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjectsResult {
+/// Parse ListObjectsV2 response. Takes ownership of `response`.
+pub fn parseListObjects(allocator: Allocator, response: *Response) !types.ListObjectsResult {
+    var http_response = response.*;
+    errdefer http_response.deinit();
+
     var objects = std.ArrayList(types.ObjectInfo).empty;
     errdefer {
         for (objects.items) |*obj| obj.deinit();
         objects.deinit(allocator);
     }
+
+    const body = http_response.body;
 
     var it = std.mem.splitSequence(u8, body, "<Contents>");
     _ = it.first(); // skip part before first <Contents>
@@ -141,27 +147,29 @@ pub fn parseListObjects(allocator: Allocator, body: []const u8) !types.ListObjec
     }
 
     const prefix_slice = try prefixes.toOwnedSlice(allocator);
-    errdefer {
-        for (prefix_slice) |prefix| allocator.free(prefix);
-        allocator.free(prefix_slice);
-    }
 
-    return types.ListObjectsResult{
+    return .{
         .objects = object_slice,
         .common_prefixes = prefix_slice,
         .is_truncated = is_truncated,
         .next_continuation_token = next_continuation_token,
+        .http_response = http_response,
         .allocator = allocator,
     };
 }
 
-/// Parse ListBuckets response
-pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucketsResult {
+/// Parse ListBuckets response. Takes ownership of `response`.
+pub fn parseListBuckets(allocator: Allocator, response: *Response) !types.ListBucketsResult {
+    var http_response = response.*;
+    errdefer http_response.deinit();
+
     var buckets = std.ArrayList(types.BucketInfo).empty;
     errdefer {
         for (buckets.items) |*b| b.deinit();
         buckets.deinit(allocator);
     }
+
+    const body = http_response.body;
 
     var it = std.mem.splitSequence(u8, body, "<Bucket>");
     _ = it.first();
@@ -192,15 +200,12 @@ pub fn parseListBuckets(allocator: Allocator, body: []const u8) !types.ListBucke
     errdefer if (owner_display_name) |n| allocator.free(n);
 
     const bucket_slice = try buckets.toOwnedSlice(allocator);
-    errdefer {
-        for (bucket_slice) |*bucket| bucket.deinit();
-        allocator.free(bucket_slice);
-    }
 
-    return types.ListBucketsResult{
+    return .{
         .buckets = bucket_slice,
         .owner_id = owner_id,
         .owner_display_name = owner_display_name,
+        .http_response = http_response,
         .allocator = allocator,
     };
 }
@@ -263,9 +268,27 @@ pub fn parseCompleteMultipartUpload(allocator: Allocator, body: []const u8) !typ
     };
 }
 
+fn makeTestResponse(allocator: Allocator, body: []const u8) !Response {
+    return .{
+        .allocator = allocator,
+        .body = try allocator.dupe(u8, body),
+        .http_head = .{
+            .bytes = try allocator.dupe(u8, ""),
+            .keep_alive = false,
+            .reason = "",
+            .status = .ok,
+            .version = .@"HTTP/1.1",
+        },
+        .s3_head = .{ .x_amz_header = .init(allocator), .allocator = allocator },
+    };
+}
+
 test "parseListObjects" {
-    const xml_data = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><Contents><Key>my-key-1</Key><LastModified>2025-12-21T01:43:47.314Z</LastModified><ETag>\"f0e633243609a75b2a4949cb431e333e\"</ETag><Size>12</Size></Contents><Contents><Key>my-key-2</Key><LastModified>2025-12-21T01:43:47.314Z</LastModified><ETag>\"d41d8cd98f00b204e9800998ecf8427e\"</ETag><Size>0</Size></Contents></ListBucketResult>";
-    var result = try parseListObjects(testing.allocator, xml_data);
+    var resp = try makeTestResponse(
+        testing.allocator,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><Contents><Key>my-key-1</Key><LastModified>2025-12-21T01:43:47.314Z</LastModified><ETag>\"f0e633243609a75b2a4949cb431e333e\"</ETag><Size>12</Size></Contents><Contents><Key>my-key-2</Key><LastModified>2025-12-21T01:43:47.314Z</LastModified><ETag>\"d41d8cd98f00b204e9800998ecf8427e\"</ETag><Size>0</Size></Contents></ListBucketResult>",
+    );
+    var result = try parseListObjects(testing.allocator, &resp);
     defer result.deinit();
     try testing.expectEqual(result.objects.len, 2);
     try testing.expectEqualStrings(result.objects[0].key, "my-key-1");
@@ -273,19 +296,47 @@ test "parseListObjects" {
 }
 
 test "parseListObjects with continuation token" {
-    const xml_data = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>next-token</NextContinuationToken><Contents><Key>my-key-1</Key><LastModified>2025-12-21T01:43:47.314Z</LastModified><ETag>\"f0e633243609a75b2a4949cb431e333e\"</ETag><Size>12</Size></Contents></ListBucketResult>";
-    var result = try parseListObjects(testing.allocator, xml_data);
+    var resp = try makeTestResponse(
+        testing.allocator,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>next-token</NextContinuationToken><Contents><Key>my-key-1</Key><LastModified>2025-12-21T01:43:47.314Z</LastModified><ETag>\"f0e633243609a75b2a4949cb431e333e\"</ETag><Size>12</Size></Contents></ListBucketResult>",
+    );
+    var result = try parseListObjects(testing.allocator, &resp);
     defer result.deinit();
     try testing.expect(result.is_truncated);
     try testing.expectEqualStrings(result.next_continuation_token.?, "next-token");
 }
 
 test "parseListBuckets" {
-    const xml_data = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListAllMyBucketsResult><Owner><ID>12345</ID><DisplayName>my-user</DisplayName></Owner><Buckets><Bucket><Name>bucket-1</Name><CreationDate>2025-12-21T01:13:10.000Z</CreationDate></Bucket><Bucket><Name>bucket-2</Name><CreationDate>2025-12-21T01:13:10.000Z</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>";
-    var result = try parseListBuckets(testing.allocator, xml_data);
+    var resp = try makeTestResponse(
+        testing.allocator,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListAllMyBucketsResult><Owner><ID>12345</ID><DisplayName>my-user</DisplayName></Owner><Buckets><Bucket><Name>bucket-1</Name><CreationDate>2025-12-21T01:13:10.000Z</CreationDate></Bucket><Bucket><Name>bucket-2</Name><CreationDate>2025-12-21T01:13:10.000Z</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>",
+    );
+    var result = try parseListBuckets(testing.allocator, &resp);
     defer result.deinit();
     try testing.expectEqual(result.buckets.len, 2);
     try testing.expectEqualStrings(result.buckets[0].name, "bucket-1");
+}
+
+test "parseListObjects frees response on allocation failure" {
+    // First allocation builds the body/headers with the real testing allocator;
+    // parse uses a failing allocator so owned fields fail and must not leak the response.
+    var resp = try makeTestResponse(
+        testing.allocator,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult><Contents><Key>my-key-1</Key><LastModified>2025-12-21T01:43:47.314Z</LastModified><ETag>\"abc\"</ETag><Size>1</Size></Contents></ListBucketResult>",
+    );
+    var failing = testing.FailingAllocator.init(testing.allocator, .{ .fail_index = 0 });
+    const result = parseListObjects(failing.allocator(), &resp);
+    try testing.expectError(error.OutOfMemory, result);
+}
+
+test "parseListBuckets frees response on allocation failure" {
+    var resp = try makeTestResponse(
+        testing.allocator,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListAllMyBucketsResult><Owner><ID>12345</ID><DisplayName>my-user</DisplayName></Owner><Buckets><Bucket><Name>bucket-1</Name><CreationDate>2025-12-21T01:13:10.000Z</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>",
+    );
+    var failing = testing.FailingAllocator.init(testing.allocator, .{ .fail_index = 0 });
+    const result = parseListBuckets(failing.allocator(), &resp);
+    try testing.expectError(error.OutOfMemory, result);
 }
 
 test "parseCreateMultipartUpload" {

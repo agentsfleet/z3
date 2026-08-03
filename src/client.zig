@@ -273,7 +273,7 @@ pub const Error = error{
     BodyLengthMismatch,
 };
 
-pub const RequestError = Error || Allocator.Error || error{
+pub const RequestError = Error || Allocator.Error || Response.ServiceError || error{
     ConflictingCustomHeader,
     InvalidMaxAttempts,
     InvalidUri,
@@ -378,7 +378,7 @@ pub const S3Head = struct {
     ///
     /// I.e. for getting the value of the `x-amz-version-id` header both calls
     /// are possible: `getAmzValue("x-amz-version-id")` or `getAmzValue("version-id")`
-    pub fn getAmzValue(self: *S3Head, key: []const u8) !?[]const u8 {
+    pub fn getAmzValue(self: S3Head, key: []const u8) !?[]const u8 {
         const amz_key = if (std.ascii.startsWithIgnoreCase(key, "x-amz-"))
             try std.ascii.allocLowerString(self.allocator, key)
         else blk: {

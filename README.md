@@ -1,3 +1,11 @@
+> [!CAUTION]
+> **This mirror is sunset and archived.**
+> [`agentsfleet`](https://github.com/agentsfleet/agentsfleet) has moved to Rust,
+> so this Zig dependency mirror is no longer used or maintained. See
+> [github.com/agentsfleet/agentsfleet](https://github.com/agentsfleet/agentsfleet)
+> for current work, or [codeberg.org/fellowtraveler/z3](https://codeberg.org/fellowtraveler/z3)
+> for the upstream project.
+
 # z3 - Async S3 Client for Zig
 
 `z3` is a lightweight, high-performance, and asynchronous S3 client for Zig. It is built directly on `std.http.Client` and utilizes the `std.Io` interface for efficient parallel operations. It has been primarily tested with Cloudflare R2 but is designed to work with any S3-compatible service.
